@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
-const bundlePath = join(root, 'pkg', 'dsh-plugin-market', 'client', 'client.js')
+const bundlePath = join(root, 'client', 'client.js')
 const src = readFileSync(bundlePath, 'utf8')
 
 let bad = 0

@@ -14,7 +14,10 @@ import { runCaptureSync } from './capture.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
-const pkgDir = join(root, 'pkg', 'dsh-plugin-market')
+// The plugin package IS the repo root, so it also installs from GitHub directly
+// (`pnpm add github:<owner>/<repo>`). pnpm packs a directory dependency through the
+// package's `files` field, so tools/ and .git/ never reach node_modules.
+const pkgDir = root
 const profileDir = join(homedir(), '.dsh', 'profiles', 'web')
 const backupDir = join(here, '.bundle-backup')
 const APPLY = process.argv.includes('--apply')

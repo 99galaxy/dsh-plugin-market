@@ -1,3 +1,9 @@
+# --- local-only documentation ---------------------------------------------
+# The maintainer's own notes: how to run the guards, the tool inventory, and the
+# pitfalls behind each fix. Deliberately NOT published — README.md carries the
+# user-facing documentation only.
+LOCAL-NOTES.md
+
 # --- runtime state produced by the plugin --------------------------------
 # The helper's catalog cache and inventory snapshot live under DSH_HOME, not
 # here, but a local DSH_MARKET_DIR override can land in the tree.
@@ -21,8 +27,8 @@ tools/.runs/
 tools/.bundle-backup/
 
 # --- retired dynamic-plugin form -----------------------------------------
-# Superseded by the bundle in pkg/dsh-plugin-market. Kept on disk for reference;
-# not published, and it contains machine-specific absolute paths.
+# Superseded by the bundle at the repo root. Kept on disk for reference; not
+# published, and it contains machine-specific absolute paths.
 src/
 tools/build-host.mjs
 tools/built-host.js

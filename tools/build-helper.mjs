@@ -5,9 +5,8 @@
 // itself. What ships must be the finished form: leaving '__CATALOG__' in place would
 // make every fetch request that literal string.
 //
-// The output is pkg/dsh-plugin-market/market-core.mjs, committed so the plugin can be
-// installed straight from a clone. tools/check-sync.mjs fails if the committed copy
-// ever stops matching this source.
+// The output is the repo-root market-core.mjs, committed so the plugin installs
+// straight from a clone. tools/check-sync.mjs fails if it stops matching this source.
 //
 // Usage: node tools/build-helper.mjs
 import { writeFileSync, mkdirSync } from 'node:fs'
@@ -28,7 +27,7 @@ if (problems.length > 0) {
   process.exit(1)
 }
 
-const dest = join(root, 'pkg', 'dsh-plugin-market', 'market-core.mjs')
+const dest = join(root, 'market-core.mjs')
 mkdirSync(dirname(dest), { recursive: true })
 writeFileSync(dest, built)
 

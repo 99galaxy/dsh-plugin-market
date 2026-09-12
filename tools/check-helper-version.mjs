@@ -50,10 +50,9 @@ console.log('  -> helper would run: ' + spec)
 check('resolved spec matches the recorded major', major !== null && spec === 'pnpm@' + major[1])
 
 // 3. The on-disk copy must have the fixed BEHAVIOUR. Byte-identity is not required:
-//    the bundle's host entry rewrites this file whenever its contents differ from
-//    the copy it ships (see ensureHelper in pkg/dsh-plugin-market/index.js), and
-//    refreshing it by hand needs write access outside the session workspace. So the
-//    invariant that matters is that it does not carry the old defects.
+//    the host entry rewrites this file whenever its contents differ from the copy it
+//    ships (see ensureHelper in index.js). So the invariant that matters is that it
+//    does not carry the old defects.
 const deployed = join(homedir(), '.dsh', '.dsh-plugin-market', 'market-core.mjs')
 check('helper present on disk', existsSync(deployed))
 if (existsSync(deployed)) {
@@ -61,7 +60,7 @@ if (existsSync(deployed)) {
   check('on-disk helper does NOT force pnpm@9', !body.includes("'--package=pnpm@9'"))
   check('on-disk helper does NOT override store-dir', !body.includes('--config.store-dir'))
   check('on-disk helper reads .modules.yaml', body.includes('modulesYaml'))
-  const shipped = readFileSync(join(root, 'pkg', 'dsh-plugin-market', 'market-core.mjs'), 'utf8')
+  const shipped = readFileSync(join(root, 'market-core.mjs'), 'utf8')
   if (body === shipped) {
     check('on-disk helper is the shipped build', true)
   } else {

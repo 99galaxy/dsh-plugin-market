@@ -2,9 +2,9 @@
 //
 //   node tools/check-all.mjs
 //
-// Scope is deliberate: only checks that say something about the plugin in
-// pkg/dsh-plugin-market. Anything that existed purely to build or verify the retired
-// dynamic-plugin form still lives on disk but is not part of this suite.
+// Scope is deliberate: only checks that say something about the shipped plugin — the
+// package at the repo root. Anything that existed purely to build or verify the
+// retired dynamic-plugin form lives on disk but is not part of this suite.
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'

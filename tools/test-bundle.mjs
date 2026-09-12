@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
-const pkg = join(root, 'pkg', 'dsh-plugin-market')
+const pkg = root
 
 // The host writes its helper copy and its capture files into DSH_MARKET_DIR. Point
 // that at a scratch directory so this test never touches the real ~/.dsh state and
@@ -81,7 +81,7 @@ function makeCtx () {
 }
 
 // ---- load and apply --------------------------------------------------------
-const mod = await import(new URL('../pkg/dsh-plugin-market/index.js', import.meta.url).href)
+const mod = await import(new URL('../index.js', import.meta.url).href)
 check('exports a name', mod.name === 'dsh-plugin-market', String(mod.name))
 check('exports apply()', typeof mod.apply === 'function')
 
