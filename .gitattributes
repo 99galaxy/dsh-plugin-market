@@ -1,0 +1,13 @@
+# Keep text files LF in the repository, whatever the checkout platform.
+#
+# The sources are run by Node and DSH on Windows, macOS and Linux; a CRLF round-trip
+# would otherwise show up as a whole-file diff on every commit. The helper's generated
+# output is compared byte-for-byte against its source by tools/check-sync.mjs, so
+# stable line endings are not cosmetic here.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
