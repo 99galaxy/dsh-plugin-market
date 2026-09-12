@@ -1,0 +1,30 @@
+{
+  "name": "dsh-plugin-market",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH 插件市场：在设置面板中浏览 awesome-dsh-plugin 目录并一键安装。Browse the awesome-dsh-plugin catalog inside Settings and install plugins.",
+  "license": "MIT",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "market-core.mjs",
+    "client",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

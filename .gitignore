@@ -1,0 +1,44 @@
+# --- runtime state produced by the plugin --------------------------------
+# The helper's catalog cache and inventory snapshot live under DSH_HOME, not
+# here, but a local DSH_MARKET_DIR override can land in the tree.
+.dsh-plugin-market/
+
+# --- test scratch ---------------------------------------------------------
+# Every test creates its own scratch directory and removes it on success; these
+# patterns cover a run that was interrupted.
+.install-test/
+.core-test/
+.built-test/
+.bundle-test-state/
+.host-test-state/
+.ver-check/
+.probe-install/
+tools/.runs/
+
+# --- local machine state --------------------------------------------------
+# A rollback copy of THIS machine's DSH profile manifest: the user's own
+# configuration, never part of the source.
+tools/.bundle-backup/
+
+# --- retired dynamic-plugin form -----------------------------------------
+# Superseded by the bundle in pkg/dsh-plugin-market. Kept on disk for reference;
+# not published, and it contains machine-specific absolute paths.
+src/
+tools/build-host.mjs
+tools/built-host.js
+tools/test-built-host.mjs
+tools/test-host.mjs
+tools/test-lean-host.mjs
+tools/test-client.mjs
+tools/check-keys.mjs
+tools/test-key-guard.mjs
+tools/replay-host.mjs
+tools/make-payload.mjs
+tools/measure.mjs
+tools/verify-pkg.mjs
+
+# --- editor / OS ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*~
