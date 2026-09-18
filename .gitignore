@@ -19,6 +19,7 @@ LOCAL-NOTES.md
 .host-test-state/
 .ver-check/
 .probe-install/
+.publish-check/
 tools/.runs/
 
 # --- local machine state --------------------------------------------------

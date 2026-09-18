@@ -15,6 +15,7 @@ const steps = [
   ['the committed helper matches its source', 'check-sync.mjs'],
   ['the helper runs for real (catalog, TTL, inventory)', 'test-market-core.mjs'],
   ['the install command shape (regression on the pnpm refusal)', 'test-install.mjs'],
+  ['the artifact npm would publish actually installs', 'check-publish.mjs'],
   ['host routes in a mock context + client source invariants', 'test-bundle.mjs'],
   ['the two settings tabs render and behave differently', 'test-bundle-tabs.mjs'],
   ['catalog field coverage', 'coverage.mjs'],
