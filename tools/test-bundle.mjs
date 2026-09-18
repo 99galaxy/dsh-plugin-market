@@ -83,7 +83,7 @@ function makeCtx () {
 
 // ---- load and apply --------------------------------------------------------
 const mod = await import(new URL('../index.js', import.meta.url).href)
-check('exports a name', mod.name === 'dsh-plugin-market', String(mod.name))
+check('exports a name', mod.name === '@99galaxy/dsh-plugin-market', String(mod.name))
 check('exports apply()', typeof mod.apply === 'function')
 
 mod.apply(makeCtx())
@@ -231,7 +231,7 @@ const clientPath = join(pkg, 'client', 'client.js')
 check('client bundle exists', existsSync(clientPath))
 const clientSrc = readFileSync(clientPath, 'utf8')
 check('client registers with the module loader', clientSrc.includes('window.__ModuleLoader__.load('))
-check('client id matches the package name', clientSrc.includes("id: 'dsh-plugin-market'"))
+check('client id matches the package name', clientSrc.includes("id: '@99galaxy/dsh-plugin-market'"))
 check('client requires react at runtime', clientSrc.includes('require("react")'))
 check('client calls the host list route', clientSrc.includes('/dsh-plugin-market/list'))
 check('client calls the host install route', clientSrc.includes('/dsh-plugin-market/install'))

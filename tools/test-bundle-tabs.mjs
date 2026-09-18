@@ -91,7 +91,7 @@ let definition = null
 global.window = { __ModuleLoader__: { load: (def) => { definition = def } } }
 new Function('window', src)(global.window)
 check('bundle registered a factory', definition !== null)
-check('bundle id', definition !== null && definition.id === 'dsh-plugin-market', definition && definition.id)
+check('bundle id', definition !== null && definition.id === '@99galaxy/dsh-plugin-market', definition && definition.id)
 
 const mod = definition.factory((name) => {
   if (name === 'react') return React

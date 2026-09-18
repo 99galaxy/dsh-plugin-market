@@ -1,4 +1,4 @@
-# dsh-plugin-market
+# @99galaxy/dsh-plugin-market
 
 **在 DeepSeek Harness 的设置面板里逛插件市场，一键安装。**
 
@@ -44,13 +44,16 @@ pnpm add github:99galaxy/dsh-plugin-market
 pnpm add https://github.com/99galaxy/dsh-plugin-market
 ```
 
+装进来的**包名**是 `@99galaxy/dsh-plugin-market` —— 与仓库名不同，所以下面层列表里要写这个
+带 scope 的名字。
+
 然后把它加进 `package.json` 的层列表 —— **声明了 `dsh.bundle` 的依赖才会被加载**：
 
 ```json
 {
   "dsh": {
     "profile": {
-      "bundles": ["...", "dsh-plugin-market"]
+      "bundles": ["...", "@99galaxy/dsh-plugin-market"]
     }
   }
 }

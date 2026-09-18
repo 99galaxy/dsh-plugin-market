@@ -61,7 +61,7 @@ function slim(p) {
 
 async function getJson(url) {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'dsh-plugin-market', Accept: 'application/json' },
+    headers: { 'User-Agent': '@99galaxy/dsh-plugin-market', Accept: 'application/json' },
   })
   if (res.status !== 200) return { ok: false, why: 'http' + res.status }
   try {

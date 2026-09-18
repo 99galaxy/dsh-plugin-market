@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-market browser half.
+ * @99galaxy/dsh-plugin-market browser half.
  *
  * A DSH client bundle: the shell's module loader runs this file, which only
  * registers a factory. The factory returns a Cordis plugin (`inject` + `apply`)
@@ -13,7 +13,7 @@
  *     two HTTP routes instead (see index.js for why).
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-plugin-market',
+  id: '@99galaxy/dsh-plugin-market',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
@@ -61,10 +61,10 @@ window.__ModuleLoader__.load({
 
     function insertCss () {
       if (typeof document === 'undefined') return
-      const id = 'dsh-plugin-market/styles.css'
+      const id = '@99galaxy/dsh-plugin-market/styles.css'
       if (document.querySelector('style[data-plugin-css=' + JSON.stringify(id) + ']') !== null) return
       const tag = document.createElement('style')
-      tag.dataset.plugin = 'dsh-plugin-market'
+      tag.dataset.plugin = '@99galaxy/dsh-plugin-market'
       tag.dataset.pluginCss = id
       tag.textContent = CSS
       document.head.appendChild(tag)
@@ -415,7 +415,7 @@ window.__ModuleLoader__.load({
     const inject = ['slots']
 
     function apply (ctx) {
-      ctx.effect(() => insertCss(), 'dsh-plugin-market: styles')
+      ctx.effect(() => insertCss(), '@99galaxy/dsh-plugin-market: styles')
       // ONE settings page. The all/installed split lives inside it as an in-page tab
       // bar, so the settings navigation gains a single entry, not two.
       ctx.slots.inject('settings.section', () => ctx.slots.register({

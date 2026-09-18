@@ -12,7 +12,7 @@ import { homedir } from 'node:os'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const backupDir = join(here, '.bundle-backup')
-const PKG_NAME = 'dsh-plugin-market'
+const PKG_NAME = '@99galaxy/dsh-plugin-market'
 
 if (!existsSync(backupDir)) {
   console.log('no backup at ' + backupDir)

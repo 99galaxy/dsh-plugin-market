@@ -1,5 +1,5 @@
 /**
- * dsh-plugin-market host entry.
+ * @99galaxy/dsh-plugin-market host entry.
  *
  * Mounts two HTTP routes under `/dsh-plugin-market/` once the profile composes
  * the `webServer` service, and delegates the actual market work to the standalone
@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 
-export const name = 'dsh-plugin-market'
+export const name = '@99galaxy/dsh-plugin-market'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const HELPER_PATH = join(HERE, 'market-core.mjs')
@@ -731,6 +731,6 @@ export function apply (ctx) {
           try { dispose() } catch (e) { /* already gone */ }
         }
       }
-    }, 'dsh-plugin-market: http routes')
+    }, '@99galaxy/dsh-plugin-market: http routes')
   })
 }

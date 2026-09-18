@@ -22,7 +22,7 @@ const profileDir = join(homedir(), '.dsh', 'profiles', 'web')
 const backupDir = join(here, '.bundle-backup')
 const APPLY = process.argv.includes('--apply')
 
-const PKG_NAME = 'dsh-plugin-market'
+const PKG_NAME = '@99galaxy/dsh-plugin-market'
 const backupFiles = ['package.json', 'pnpm-lock.yaml']
 
 let bad = 0

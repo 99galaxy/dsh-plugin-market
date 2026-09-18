@@ -1,4 +1,4 @@
-// dsh-plugin-market — market helper
+// @99galaxy/dsh-plugin-market — market helper
 //
 // Standalone CLI, kept as a real file so the Cordis Host half does not have to
 // embed a 23 KB script. The host writes this file to its state directory and
@@ -81,7 +81,7 @@ function slim(p) {
 
 async function getJson(url) {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'dsh-plugin-market', Accept: 'application/json' },
+    headers: { 'User-Agent': '@99galaxy/dsh-plugin-market', Accept: 'application/json' },
   })
   if (res.status !== 200) return { ok: false, why: 'http' + res.status }
   try {
