@@ -89,6 +89,12 @@ const fakeHome = join(scratch, 'home')
 const profileDir = join(fakeHome, 'profiles', 'web')
 mkdirSync(join(profileDir, 'node_modules', '@scope', 'pkg'), { recursive: true })
 mkdirSync(join(profileDir, 'node_modules', 'plain-dep'), { recursive: true })
+// The two installed packages carry a version; `gh-dep` has no directory at all, so
+// its version must come back missing rather than invented.
+writeFileSync(join(profileDir, 'node_modules', 'plain-dep', 'package.json'),
+  JSON.stringify({ name: 'plain-dep', version: '1.2.3' }))
+writeFileSync(join(profileDir, 'node_modules', '@scope', 'pkg', 'package.json'),
+  JSON.stringify({ name: '@scope/pkg', version: '2.0.1' }))
 writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
   name: 'web',
   dependencies: {
@@ -108,10 +114,25 @@ if (inst.json) {
   check('found the node_modules dirs', inst.json.dirCount === 2, 'dirCount=' + inst.json.dirCount)
   check('listed every spec name', Array.isArray(inst.json.specs) && inst.json.specs.length === 3, JSON.stringify(inst.json.specs))
   const written = JSON.parse(readFileSync(join(stateDir, 'installed.json'), 'utf8'))
-  check('wrote installed.json with the GitHub spec',
-    written.specs && written.specs['gh-dep'] === 'gh-dep', JSON.stringify(written.specs))
+  // The VALUE must be the recorded spec, not the name. The host half reads the
+  // github URL back out of it to build its repo table; name -> name leaves that
+  // table empty, so the ~46% of catalog entries whose install command is
+  // `dsh plugin add github:owner/repo` could never be marked as installed.
+  check('wrote installed.json keeping the GitHub spec',
+    written.specs && written.specs['gh-dep'] === 'github:someowner/somerepo', JSON.stringify(written.specs))
+  check('wrote installed.json keeping a plain spec',
+    written.specs && written.specs['plain-dep'] === '^1.0.0', JSON.stringify(written.specs))
   check('recorded dsh.profile.bundles', JSON.stringify(written.bundles) === '["plain-dep"]', JSON.stringify(written.bundles))
   check('recorded scoped dir name', written.dirNames.includes('@scope/pkg'), JSON.stringify(written.dirNames))
+  // Installed versions, for the market's update check. Without these the host can
+  // only say "cannot judge", which is exactly what it must not do by default.
+  check('recorded the installed version of a plain dep',
+    written.versions && written.versions['plain-dep'] === '1.2.3', JSON.stringify(written.versions))
+  check('recorded the installed version of a scoped dep',
+    written.versions && written.versions['@scope/pkg'] === '2.0.1', JSON.stringify(written.versions))
+  check('invented no version for the package that is not installed',
+    written.versions && written.versions['gh-dep'] === undefined, JSON.stringify(written.versions))
+  check('reported the version count', inst.json.versionCount === 2, String(inst.json.versionCount))
 }
 
 console.log('\n--- unknown action (must fail loudly) ---')

@@ -180,9 +180,10 @@ function doInstalled() {
   } catch (e) {
     return { ok: false, message: 'profile package.json 解析失败：' + (e && e.message) }
   }
+
   const deps = manifest.dependencies || {}
   const specs = {}
-  for (const name of Object.keys(deps)) specs[name] = name
+  for (const name of Object.keys(deps)) specs[name] = typeof deps[name] === 'string' ? deps[name] : name
 
   const dirNames = []
   const nm = join(profileDir, 'node_modules')
@@ -202,18 +203,31 @@ function doInstalled() {
     }
   } catch (e) {  }
 
+  const bundles = (manifest.dsh && manifest.dsh.profile && manifest.dsh.profile.bundles) || []
+
+  const versions = {}
+  for (const name of Object.keys(deps).concat(bundles)) {
+    if (versions[name] !== undefined) continue
+    try {
+      const m = JSON.parse(readFileSync(join(nm, name, 'package.json'), 'utf8'))
+      if (m && typeof m.version === 'string' && m.version !== '') versions[name] = m.version
+    } catch (e) {  }
+  }
+
   const payload = {
     profile,
     profileDir,
     generatedAt: Date.now(),
-    bundles: (manifest.dsh && manifest.dsh.profile && manifest.dsh.profile.bundles) || [],
+    bundles,
     specs,
     dirNames,
+    versions,
   }
   if (!ensureDir()) return { ok: false, message: '无法创建状态目录' }
   writeFileSync(INSTALLED_PATH, JSON.stringify(payload))
   return {
     ok: true, profile, specCount: Object.keys(specs).length, dirCount: dirNames.length,
+    versionCount: Object.keys(versions).length,
     path: INSTALLED_PATH, specs: Object.keys(specs),
   }
 }

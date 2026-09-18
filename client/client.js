@@ -54,6 +54,7 @@ window.__ModuleLoader__.load({
       '.dsxpm-chip{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:1px 7px}',
       '.dsxpm-cat{color:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary)}',
       '.dsxpm-installed{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary);font-weight:600}',
+      '.dsxpm-update{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary);font-weight:600}',
       '.dsxpm-link{color:var(--dsw-alias-brand-primary);text-decoration:none;cursor:pointer;font-size:11px}',
       '.dsxpm-log{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.5;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:8px;max-height:220px;overflow:auto;margin-top:6px}',
     ].join('\n')
@@ -125,6 +126,10 @@ window.__ModuleLoader__.load({
     function MarketPage () {
       const [tab, setTab] = React.useState('all')
       const installedMode = tab === 'installed'
+      const updatableMode = tab === 'updatable'
+      // Every tab but the first pins the range it shows; writing `only` here is what
+      // makes the query effect below fire with the new value.
+      const tabOnly = installedMode ? 'installed' : updatableMode ? 'updatable' : 'all'
       const [list, setList] = React.useState([])
       const [cats, setCats] = React.useState([])
       const [loading, setLoading] = React.useState(false)
@@ -141,6 +146,8 @@ window.__ModuleLoader__.load({
       const [zh, setZh] = React.useState(true)
       const [total, setTotal] = React.useState(0)
       const [installedTotal, setInstalledTotal] = React.useState(0)
+      const [updatableTotal, setUpdatableTotal] = React.useState(0)
+      const [unknownTotal, setUnknownTotal] = React.useState(0)
       const [adv, setAdv] = React.useState(false)
       const [busy, setBusy] = React.useState('')
       const [job, setJob] = React.useState(null)
@@ -156,7 +163,7 @@ window.__ModuleLoader__.load({
       function switchTab (next) {
         if (next === tab) return
         setTab(next)
-        const nextOnly = next === 'installed' ? 'installed' : 'all'
+        const nextOnly = next === 'installed' ? 'installed' : next === 'updatable' ? 'updatable' : 'all'
         latest.current.only = nextOnly
         setOnly(nextOnly)
       }
@@ -198,10 +205,15 @@ window.__ModuleLoader__.load({
             setCats(p.categories || [])
             setTotal(p.matched === undefined ? items.length : p.matched)
             setInstalledTotal(p.installedTotal === undefined ? 0 : p.installedTotal)
+            setUpdatableTotal(p.updatableTotal === undefined ? 0 : p.updatableTotal)
+            setUnknownTotal(p.unknownTotal === undefined ? 0 : p.unknownTotal)
             setSaveAge(p.fetchedAt ? ('本地目录保存于 ' + age(p.fetchedAt) + '（超 1 小时自动重新获取）') : '')
             setMeta(installedMode
               ? ('已安装 ' + String(p.installedTotal === undefined ? 0 : p.installedTotal) + ' 个（目录共 ' + String(p.total) + ' 个）')
-              : ('目录 ' + String(p.total) + ' 个' + (p.catalogUpdated ? '（数据 ' + String(p.catalogUpdated) + '）' : '')))
+              : updatableMode
+                ? ('可更新 ' + String(p.updatableTotal === undefined ? 0 : p.updatableTotal) +
+                   ' 个（已安装 ' + String(p.installedTotal === undefined ? 0 : p.installedTotal) + ' 个，目录共 ' + String(p.total) + ' 个）')
+                : ('目录 ' + String(p.total) + ' 个' + (p.catalogUpdated ? '（数据 ' + String(p.catalogUpdated) + '）' : '')))
             setSrcNote(p.note ? String(p.note) : (p.source === 'mirror' ? '官方域名不可达，已走镜像通道' : ''))
           } else {
             if (!append) setList([])
@@ -217,9 +229,12 @@ window.__ModuleLoader__.load({
         })
       }, [])
 
-      React.useEffect(function () { query(0, false, false) }, [])
       // Filters are applied on the host, so every change must re-query immediately
       // with the new values rather than wait for a later render.
+      //
+      // This effect also covers the MOUNT. A separate `useEffect(…, [])` alongside it
+      // fired on the first render too, issuing the identical request a second time —
+      // two host round trips per page open, and nothing to show for the first one.
       React.useEffect(function () { query(0, false, false) }, [category, sort, only])
 
       function install (item) {
@@ -231,7 +246,7 @@ window.__ModuleLoader__.load({
         postInstall(String(item.install || ''), spec).then(function (res) {
           setBusy('')
           if (res && res.ok === true) {
-            setJob({ spec: spec, seconds: res.seconds, log: res.log || '' })
+            setJob({ spec: spec, kind: item.update ? '更新' : '安装', seconds: res.seconds, log: res.log || '' })
             query(0, false, false)
           } else {
             setError(res && res.message ? String(res.message) : '安装失败')
@@ -244,24 +259,24 @@ window.__ModuleLoader__.load({
       }
 
       function resetFilters () {
-        // On the installed tab `only` is pinned by the tab itself, so clearing the
-        // other filters must not switch the range back to "all".
-        setFilter({ q: '', category: '', sort: 'stars', only: installedMode ? 'installed' : 'all' })
+        // `only` is pinned by whichever tab is open, so clearing the other filters
+        // must not switch the range back to "all".
+        setFilter({ q: '', category: '', sort: 'stars', only: tabOnly })
       }
 
-      const filtersActive = search.trim() !== '' || category !== '' || (!installedMode && only !== 'all')
+      const filtersActive = search.trim() !== '' || category !== '' || (tabOnly === 'all' && only !== 'all')
       const catLabels = {}
       for (const c of cats) catLabels[c.id] = c.zh || c.en || c.id
 
-      // In-page tabs. The installed count rides on the label so the tab itself says
-      // how many there are, without opening it.
+      // In-page tabs. Each count rides on its label so the tab itself says how many
+      // there are, without opening it.
       const tabBar = el('div', { key: 'tabs', className: 'dsxpm-tabs', role: 'tablist' }, [
         el('button', {
           key: 't-all',
           type: 'button',
           role: 'tab',
-          'aria-selected': installedMode ? 'false' : 'true',
-          className: 'dsxpm-tab' + (installedMode ? '' : ' dsxpm-tab-on'),
+          'aria-selected': tab === 'all' ? 'true' : 'false',
+          className: 'dsxpm-tab' + (tab === 'all' ? ' dsxpm-tab-on' : ''),
           onClick: function () { switchTab('all') },
         }, ['全部插件']),
         el('button', {
@@ -272,6 +287,14 @@ window.__ModuleLoader__.load({
           className: 'dsxpm-tab' + (installedMode ? ' dsxpm-tab-on' : ''),
           onClick: function () { switchTab('installed') },
         }, ['已安装', el('span', { key: 'n', className: 'dsxpm-tab-n' }, [String(installedTotal)])]),
+        el('button', {
+          key: 't-updatable',
+          type: 'button',
+          role: 'tab',
+          'aria-selected': updatableMode ? 'true' : 'false',
+          className: 'dsxpm-tab' + (updatableMode ? ' dsxpm-tab-on' : ''),
+          onClick: function () { switchTab('updatable') },
+        }, ['可更新', el('span', { key: 'n', className: 'dsxpm-tab-n' }, [String(updatableTotal)])]),
       ])
 
       const bar = []
@@ -285,9 +308,9 @@ window.__ModuleLoader__.load({
         el('option', { key: 'nm', value: 'name' }, ['按名称']),
         el('option', { key: 'ad', value: 'added' }, ['按收录时间']),
       ]))
-      // The installed tab is already scoped, so the range selector would be a
-      // no-op there; showing it would only invite confusion.
-      if (!installedMode) {
+      // The installed and updatable tabs are already scoped, so the range selector
+      // would be a no-op there; showing it would only invite confusion.
+      if (tabOnly === 'all') {
         bar.push(el('select', { key: 'o', className: 'dsxpm-select', value: only, onChange: function (e) { setFilter({ only: e.target.value }) } }, [
           el('option', { key: 'a', value: 'all' }, ['全部']),
           el('option', { key: 'i', value: 'installed' }, ['仅已安装']),
@@ -314,22 +337,31 @@ window.__ModuleLoader__.load({
       }
 
       kids.push(el('div', { key: 'meta', className: 'dsxpm-meta' }, [meta === '' ? '数据源：' + SRC_URL + '（保存到本地，超过 1 小时自动重新获取）' : meta]))
+      // State the blind spot rather than hiding it: a plugin the catalog carries no
+      // version for — or has never heard of at all — cannot be judged either way, so
+      // an empty list here must not be read as "everything is current".
+      if (updatableMode && unknownTotal > 0) {
+        kids.push(el('div', { key: 'unk', className: 'dsxpm-meta' }, ['另有 ' + String(unknownTotal) + ' 个已安装插件无法判断（目录里没有可用的版本信息）']))
+      }
       if (saveAge !== '') kids.push(el('div', { key: 'age', className: 'dsxpm-meta' }, [saveAge]))
       if (srcNote !== '') kids.push(el('div', { key: 'src', className: 'dsxpm-meta', style: { color: 'var(--dsw-alias-state-warn-primary)' } }, [srcNote]))
       if (error !== '') kids.push(el('div', { key: 'err', className: 'dsxpm-meta', style: { color: 'var(--dsw-alias-state-error-primary)' } }, [error]))
       if (detail !== '') kids.push(el('div', { key: 'det', className: 'dsxpm-log' }, [detail]))
 
       if (job !== null) {
-        const box = [el('div', { key: 't', style: { fontWeight: 600 } }, ['安装完成：' + job.spec + '（' + String(job.seconds) + ' 秒）'])]
+        const box = [el('div', { key: 't', style: { fontWeight: 600 } }, [(job.kind || '安装') + '完成：' + job.spec + '（' + String(job.seconds) + ' 秒）'])]
         box.push(el('div', { key: 'n', className: 'dsxpm-meta' }, ['请重启 DSH（或重载 profile）后该插件才会加载。']))
         if (job.log) box.push(el('div', { key: 'l', className: 'dsxpm-log' }, [String(job.log)]))
         kids.push(el('div', { key: 'job', className: 'dsxpm-card' }, [el('div', { className: 'dsxpm-info' }, box)]))
       }
 
       if (!loading && list.length === 0) {
+        const filtered = search.trim() !== '' || category !== ''
         kids.push(el('div', { key: 'empty', className: 'dsxpm-meta' }, [installedMode
-          ? (search.trim() !== '' || category !== '' ? '已安装的插件里没有匹配项。' : '还没有安装任何插件。去「全部插件」标签挑一个吧。')
-          : (only === 'installed' ? '没有已安装的插件。' : '暂无数据或没有匹配的插件。')]))
+          ? (filtered ? '已安装的插件里没有匹配项。' : '还没有安装任何插件。去「全部插件」标签挑一个吧。')
+          : updatableMode
+            ? (filtered ? '可更新的插件里没有匹配项。' : '没有可更新的插件。')
+            : (only === 'installed' ? '没有已安装的插件。' : '暂无数据或没有匹配的插件。')]))
       }
 
       // Cards are keyed by name AND index: plugin names are not unique in the
@@ -343,7 +375,14 @@ window.__ModuleLoader__.load({
         tags.push(el('span', { key: 'cat', className: 'dsxpm-chip dsxpm-cat' }, [String(catLabels[it.category] || it.category || '未分类')]))
         if (it.stars) tags.push(el('span', { key: 'st', className: 'dsxpm-chip' }, ['★ ' + fmt(it.stars)]))
         if (it.downloads) tags.push(el('span', { key: 'dl', className: 'dsxpm-chip' }, ['↓ ' + fmt(it.downloads)]))
-        if (it.version) tags.push(el('span', { key: 'v', className: 'dsxpm-chip' }, ['v' + String(it.version)]))
+        // One version chip, not two: when there is an update it carries both sides.
+        if (it.update) {
+          tags.push(el('span', { key: 'v', className: 'dsxpm-chip dsxpm-update' }, [
+            '可更新 ' + String(it.version) + (it.installedVersion ? '（当前 ' + String(it.installedVersion) + '）' : ''),
+          ]))
+        } else if (it.version) {
+          tags.push(el('span', { key: 'v', className: 'dsxpm-chip' }, ['v' + String(it.version)]))
+        }
         if (it.added) tags.push(el('span', { key: 'ad', className: 'dsxpm-chip' }, ['收录 ' + String(it.added)]))
         tags.push(el('a', { key: 'lk', className: 'dsxpm-link', href: String(it.page || it.url || LIST_URL), target: '_blank', rel: 'noreferrer' }, [it.page ? '详情页 ↗' : 'GitHub ↗']))
         const desc = zh ? (it.zh || it.en || '（无简介）') : (it.en || it.zh || '(no description)')
@@ -354,10 +393,12 @@ window.__ModuleLoader__.load({
             el('div', { className: 'dsxpm-tags' }, tags),
           ]),
           el('button', {
-            className: 'dsxpm-btn' + (it.installed ? '' : ' dsxpm-btn-on'),
+            className: 'dsxpm-btn' + (it.installed && !it.update ? '' : ' dsxpm-btn-on'),
             disabled: isBusy,
             onClick: function () { install(it) },
-          }, [isBusy ? '安装中…' : (it.installed ? '重新安装' : '安装')]),
+          }, [isBusy
+            ? (it.update ? '更新中…' : '安装中…')
+            : (it.update ? '更新' : it.installed ? '重新安装' : '安装')]),
         ])
       })
       kids.push(el('div', { key: 'list', className: 'dsxpm-list' }, cards))

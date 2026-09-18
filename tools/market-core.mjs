@@ -208,9 +208,13 @@ function doInstalled() {
   } catch (e) {
     return { ok: false, message: 'profile package.json 解析失败：' + (e && e.message) }
   }
+  // name -> the spec the profile actually records, NOT name -> name. The reader
+  // (index.js installedMaps) digs `github:owner/repo` out of the spec to build its
+  // repo table, and the catalog lists half its entries in exactly that form: with
+  // name -> name the table stays empty and those entries can never show as installed.
   const deps = manifest.dependencies || {}
   const specs = {}
-  for (const name of Object.keys(deps)) specs[name] = name
+  for (const name of Object.keys(deps)) specs[name] = typeof deps[name] === 'string' ? deps[name] : name
 
   const dirNames = []
   const nm = join(profileDir, 'node_modules')
@@ -230,18 +234,37 @@ function doInstalled() {
     }
   } catch (e) { /* no node_modules yet */ }
 
+  const bundles = (manifest.dsh && manifest.dsh.profile && manifest.dsh.profile.bundles) || []
+
+  // name -> installed version, for the update check. Deliberately NOT for every
+  // directory under node_modules: most of them are DSH's own transitive
+  // dependencies, and reading all of them costs ~100 ms against ~1 ms for the few
+  // that can be a plugin. `bundles` is included because a bundle need not be a
+  // declared dependency. A name that cannot be read simply gets no entry, and the
+  // reader reports that plugin's version as unknown rather than guessing.
+  const versions = {}
+  for (const name of Object.keys(deps).concat(bundles)) {
+    if (versions[name] !== undefined) continue
+    try {
+      const m = JSON.parse(readFileSync(join(nm, name, 'package.json'), 'utf8'))
+      if (m && typeof m.version === 'string' && m.version !== '') versions[name] = m.version
+    } catch (e) { /* not installed under that name */ }
+  }
+
   const payload = {
     profile,
     profileDir,
     generatedAt: Date.now(),
-    bundles: (manifest.dsh && manifest.dsh.profile && manifest.dsh.profile.bundles) || [],
+    bundles,
     specs,
     dirNames,
+    versions,
   }
   if (!ensureDir()) return { ok: false, message: '无法创建状态目录' }
   writeFileSync(INSTALLED_PATH, JSON.stringify(payload))
   return {
     ok: true, profile, specCount: Object.keys(specs).length, dirCount: dirNames.length,
+    versionCount: Object.keys(versions).length,
     path: INSTALLED_PATH, specs: Object.keys(specs),
   }
 }
