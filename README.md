@@ -147,7 +147,7 @@ package.json          声明 dsh.bundle.patch 与 dsh.client.platform
 cordis.patch.yml      把自己插进 profile 的层栈
 index.js              宿主半边：两条 HTTP 路由
 market-core.mjs       市场逻辑（生成物，请勿手改）
-client/client.js      浏览器半边：单个设置页 + 页内两个标签
+client/client.js      浏览器半边：单个设置页 + 页内三个标签
 ```
 
 `market-core.mjs` 由源生成后一并提交，所以 clone 下来即可安装，不需要任何构建步骤。

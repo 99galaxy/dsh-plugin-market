@@ -17,7 +17,7 @@ const steps = [
   ['the install command shape (regression on the pnpm refusal)', 'test-install.mjs'],
   ['the artifact npm would publish actually installs', 'check-publish.mjs'],
   ['host routes in a mock context + client source invariants', 'test-bundle.mjs'],
-  ['the two settings tabs render and behave differently', 'test-bundle-tabs.mjs'],
+  ['the three settings tabs render and behave differently', 'test-bundle-tabs.mjs'],
   ['catalog field coverage', 'coverage.mjs'],
   ['README has no stale claims', 'check-readme.mjs'],
   ['the declared screenshots exist and obey the list\'s rules', 'check-screenshots.mjs'],
