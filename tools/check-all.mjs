@@ -20,6 +20,7 @@ const steps = [
   ['the two settings tabs render and behave differently', 'test-bundle-tabs.mjs'],
   ['catalog field coverage', 'coverage.mjs'],
   ['README has no stale claims', 'check-readme.mjs'],
+  ['the declared screenshots exist and obey the list\'s rules', 'check-screenshots.mjs'],
   ['the local profile agrees with the helper (skips without a profile)', 'check-helper-version.mjs'],
 ]
 
