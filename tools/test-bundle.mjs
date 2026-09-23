@@ -279,7 +279,12 @@ if (!existsSync(npmCli)) {
   process.env.npm_config_tmp = join(scratch, 'npm-tmp')
   mkdirSync(join(scratch, 'npm-tmp'), { recursive: true })
 
-  const resLive = await postInstall(JSON.stringify({ install: 'dsh plugin --profile web add is-even@1.0.0' }))
+  const installBody = JSON.stringify({ install: 'dsh plugin --profile web add is-even@1.0.0' })
+  const firstInstall = postInstall(installBody)
+  const resConcurrent = await postInstall(installBody)
+  check('a second install is refused while the profile is being modified',
+    resConcurrent.state.status === 409, 'status=' + resConcurrent.state.status)
+  const resLive = await firstInstall
   let live = null
   try { live = JSON.parse(resLive.state.body) } catch (e) { live = null }
   const liveLog = live === null ? resLive.state.body : String(live.log || '')
@@ -322,7 +327,8 @@ console.log('\n--- update verdicts (synthetic catalog, offline) ---')
     ['delta', '^0.1.0', '0.1.0', ''], // the catalog carries no version -> unknown
     ['epsilon', '^1.0.0-rc.1', '1.0.0-rc.1', '1.0.0-rc.3'], // prerelease -> prerelease
     ['zeta', '^1.0.0', '1.0.0', '1.0.0-rc.3'], // a release outranks its prerelease
-    ['eta', '^1.0.0', '1.0.0', null], // not in the catalog at all -> unknown
+    ['eta', '^1.0.0', '1.0.0', null], // installed bundle absent from catalog -> unknown
+    ['ordinary-library', '^1.0.0', '1.0.0', null], // not a plugin -> excluded
   ]
   const deps = {}
   for (const [name, spec, installed] of fixture) {
@@ -335,7 +341,7 @@ console.log('\n--- update verdicts (synthetic catalog, offline) ---')
     name: 'dsh-profile-web',
     private: true,
     dependencies: deps,
-    dsh: { profile: { bundles: [] } },
+    dsh: { profile: { bundles: ['eta'] } },
   }, null, 2))
 
   writeFileSync(join(synthState, 'catalog.json'), JSON.stringify({

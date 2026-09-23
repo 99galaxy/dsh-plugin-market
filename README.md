@@ -129,7 +129,7 @@ ctx.inject(['webServer'], (host) => {
 | `POST` | `/dsh-plugin-market/install` | `{ install, name? }` | `{ ok, spec, seconds, log }` |
 
 `items` 里的每个条目除了插件本身，还带 `installed` / `installedAs` / `installedVersion` / `update`。
-`updatableTotal` 是可更新数，`unknownTotal` 是**判断不了**的数（目录里没有版本，或目录没收录这个插件）。
+`updatableTotal` 是可更新数，`unknownTotal` 是**判断不了**的数（目录里没有版本，或目录没收录已声明的 bundle）；普通 profile 依赖不计入。
 更新判断只比对目录里的 `version`，不额外发任何网络请求。
 
 `bypass=1` 是**唯一**的强制重新抓取旗标；只有「强制重新获取」按钮发它，其余调用都只做新鲜度检查。

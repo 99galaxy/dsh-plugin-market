@@ -179,6 +179,7 @@ window.__ModuleLoader__.load({
         const cur = latest.current
         cur.seq += 1
         const myId = cur.seq
+        const requestedOnly = cur.only
         if (append) setMore(true)
         else setLoading(true)
         setError('')
@@ -187,7 +188,7 @@ window.__ModuleLoader__.load({
           category: cur.category,
           q: String(cur.q).trim(),
           sort: cur.sort,
-          only: cur.only,
+          only: requestedOnly,
           offset,
           bypass: bypass === true,
         }).then(function (res) {
@@ -208,9 +209,9 @@ window.__ModuleLoader__.load({
             setUpdatableTotal(p.updatableTotal === undefined ? 0 : p.updatableTotal)
             setUnknownTotal(p.unknownTotal === undefined ? 0 : p.unknownTotal)
             setSaveAge(p.fetchedAt ? ('本地目录保存于 ' + age(p.fetchedAt) + '（超 1 小时自动重新获取）') : '')
-            setMeta(installedMode
+            setMeta(requestedOnly === 'installed'
               ? ('已安装 ' + String(p.installedTotal === undefined ? 0 : p.installedTotal) + ' 个（目录共 ' + String(p.total) + ' 个）')
-              : updatableMode
+              : requestedOnly === 'updatable'
                 ? ('可更新 ' + String(p.updatableTotal === undefined ? 0 : p.updatableTotal) +
                    ' 个（已安装 ' + String(p.installedTotal === undefined ? 0 : p.installedTotal) + ' 个，目录共 ' + String(p.total) + ' 个）')
                 : ('目录 ' + String(p.total) + ' 个' + (p.catalogUpdated ? '（数据 ' + String(p.catalogUpdated) + '）' : '')))
@@ -394,7 +395,7 @@ window.__ModuleLoader__.load({
           ]),
           el('button', {
             className: 'dsxpm-btn' + (it.installed && !it.update ? '' : ' dsxpm-btn-on'),
-            disabled: isBusy,
+            disabled: busy !== '',
             onClick: function () { install(it) },
           }, [isBusy
             ? (it.update ? '更新中…' : '安装中…')

@@ -338,8 +338,9 @@ function doInstall() {
     const runDir = join(STATE_DIR, '.runs')
     let ofd = 0
     let efd = 0
-    const outPath = join(runDir, 'install-' + Date.now() + '.out')
-    const errPath = join(runDir, 'install-' + Date.now() + '.err')
+    const tag = 'install-' + Date.now() + '-' + process.pid
+    const outPath = join(runDir, tag + '.out')
+    const errPath = join(runDir, tag + '.err')
     try {
       mkdirSync(runDir, { recursive: true })
       ofd = openSync(outPath, 'w')

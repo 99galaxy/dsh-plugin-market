@@ -18,7 +18,7 @@ export function buildHelper (source) {
   return stripComments(source.replace(/\r\n/g, '\n'))
     .split('__CATALOG__').join(CATALOG_URL)
     .split('__CDN__').join(CDN)
-    .split('__MIRROR__').join(MIRROR)
+    .split('__MIRROR__').join(MIRROR) + '\n'
 }
 
 /** Every problem that would make the built helper unusable, as a list of strings. */

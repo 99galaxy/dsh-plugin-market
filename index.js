@@ -37,6 +37,7 @@ const INSTALLED_TTL_MS = 5000
 
 // Distinguishes concurrent helper runs' capture files.
 let seqRun = 0
+let installInProgress = false
 
 // Memoises the helper-sync check. The key carries the shipped file's size and mtime,
 // so a long-lived process verifies the state-dir copy once instead of reading two
@@ -617,11 +618,11 @@ export function apply (ctx) {
               if (v.state === 'update') updatableTotal += 1
               else if (v.state === 'unknown') unknownTotal += 1
             }
-            // Installed packages that no catalog row claims: a plugin the list has
-            // never heard of. Those are the largest blind spot of all — by being
-            // absent they would otherwise look perfectly up to date.
-            for (const name of Object.keys(versions)) {
-              if (!claimed.has(name.toLowerCase())) unknownTotal += 1
+            // Unlisted bundles are also unknown. Other profile dependencies are not
+            // necessarily plugins, so they must not inflate this count.
+            const bundles = snapshot && Array.isArray(snapshot.bundles) ? snapshot.bundles : []
+            for (const name of bundles) {
+              if (!claimed.has(textOf(name).toLowerCase())) unknownTotal += 1
             }
 
             let rows = all
@@ -702,24 +703,33 @@ export function apply (ctx) {
               sendJson(response, 400, { ok: false, message: '安装命令无法解析或不安全，已拒绝执行' })
               return
             }
-            const started = Date.now()
-            const result = await runHelper(['install', spec, '--profile', PROFILE], 900000)
-            const took = Math.round((Date.now() - started) / 1000)
-            // `install` prints no result marker, so the exit code is the verdict.
-            if (result.ok === true || result.exitCode === 0) {
-              // The badge must not stay stale for the TTL after a successful install.
-              invalidateInstalled()
-              sendJson(response, 200, { ok: true, spec, seconds: took, log: textOf(result.stdout).slice(-4000) })
+            if (installInProgress) {
+              sendJson(response, 409, { ok: false, message: '已有插件正在安装，请等待完成后重试' })
               return
             }
-            const code = typeof result.exitCode === 'number' ? result.exitCode : null
-            sendJson(response, 500, {
-              ok: false,
-              spec,
-              seconds: took,
-              message: code === null ? (result.message || '安装失败') : ('安装失败：pnpm 退出码 ' + String(code)),
-              log: (textOf(result.stderr) + '\n' + textOf(result.stdout)).slice(-4000),
-            })
+            installInProgress = true
+            try {
+              const started = Date.now()
+              const result = await runHelper(['install', spec, '--profile', PROFILE], 900000)
+              const took = Math.round((Date.now() - started) / 1000)
+              // `install` prints no result marker, so the exit code is the verdict.
+              if (result.ok === true || result.exitCode === 0) {
+                // The badge must not stay stale for the TTL after a successful install.
+                invalidateInstalled()
+                sendJson(response, 200, { ok: true, spec, seconds: took, log: textOf(result.stdout).slice(-4000) })
+                return
+              }
+              const code = typeof result.exitCode === 'number' ? result.exitCode : null
+              sendJson(response, 500, {
+                ok: false,
+                spec,
+                seconds: took,
+                message: code === null ? (result.message || '安装失败') : ('安装失败：pnpm 退出码 ' + String(code)),
+                log: (textOf(result.stderr) + '\n' + textOf(result.stdout)).slice(-4000),
+              })
+            } finally {
+              installInProgress = false
+            }
           } catch (e) {
             sendJson(response, 500, { ok: false, message: textOf(e && e.message) })
           }

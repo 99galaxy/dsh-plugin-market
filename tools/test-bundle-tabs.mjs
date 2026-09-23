@@ -64,6 +64,7 @@ function payloadFor (items, matched, installedTotal, updatableTotal, unknownTota
 // ---- minimal React ---------------------------------------------------------
 const stateStore = []
 const refs = []
+const callbacks = []
 let hookIndex = 0
 let pendingEffects = []
 
@@ -82,7 +83,13 @@ const React = {
     if (!(i in refs)) refs[i] = { current: typeof initial === 'function' ? initial() : initial }
     return refs[i]
   },
-  useCallback (fn) { hookIndex += 1; return fn },
+  useCallback (fn, deps) {
+    const index = hookIndex++
+    const previous = callbacks[index]
+    if (previous && deps.every((value, offset) => Object.is(value, previous.deps[offset]))) return previous.fn
+    callbacks[index] = { fn, deps }
+    return fn
+  },
   useEffect (fn) { hookIndex += 1; pendingEffects.push(fn) },
 }
 
@@ -168,6 +175,7 @@ async function settle (tree) {
 console.log('--- 默认：全部插件 ---')
 stateStore.length = 0
 refs.length = 0
+callbacks.length = 0
 fetchCalls = []
 nextPayload = payloadFor([{ name: 'a1', category: 'ui', categoryZh: '界面', install: 'dsh plugin add a1' }], 3561, 3, 2)
 let tree = await settle(draw())
@@ -258,6 +266,7 @@ check('shows the new item', cardNames(tree).join(',') === 'b1', cardNames(tree).
 console.log('\n--- 已安装为空 ---')
 stateStore.length = 0
 refs.length = 0
+callbacks.length = 0
 fetchCalls = []
 nextPayload = payloadFor([], 0, 0)
 let tree2 = await settle(draw())
@@ -274,6 +283,7 @@ check('the installed tab shows 0', emptyText.includes('已安装 0 个'), emptyT
 console.log('\n--- 已安装但没有更新 ---')
 stateStore.length = 0
 refs.length = 0
+callbacks.length = 0
 fetchCalls = []
 nextPayload = payloadFor([
   { name: 'a1', category: 'ui', categoryZh: '界面', install: 'dsh plugin add a1', installed: true, installedAs: 'a1', installedVersion: '1.0.0', version: '1.0.0', update: false },
@@ -287,6 +297,7 @@ check('the button falls back to 重新安装', textsOf(cardButton(treeCurrent)) 
 console.log('\n--- 可更新为空 + 有无法判断的插件 ---')
 stateStore.length = 0
 refs.length = 0
+callbacks.length = 0
 fetchCalls = []
 nextPayload = payloadFor([], 0, 4, 0, 2)
 let treeEmpty = await settle(draw())
