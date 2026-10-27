@@ -1,8 +1,8 @@
-// Render the market page and drive its IN-PAGE tabs.
+// Render the sidebar market page and drive its IN-PAGE tabs.
 //
 //   node tools/test-bundle-tabs.mjs
 //
-// The requirement: the plugin contributes ONE settings page, and that page holds a
+// The requirement: the plugin contributes ONE sidebar page, and that page holds a
 // tab bar whose "已安装" tab lists only installed plugins. It must NOT add a second
 // entry to the settings navigation.
 //
@@ -32,6 +32,9 @@ let fetchCalls = []
 let nextPayload = null
 global.fetch = async (url) => {
   fetchCalls.push(String(url))
+  if (String(url).includes('/reload')) {
+    return { status: 200, json: async () => ({ ok: true, warnings: [], pending: [] }) }
+  }
   return { status: 200, json: async () => nextPayload }
 }
 
@@ -65,6 +68,7 @@ function payloadFor (items, matched, installedTotal, updatableTotal, unknownTota
 const stateStore = []
 const refs = []
 const callbacks = []
+const effectDeps = []
 let hookIndex = 0
 let pendingEffects = []
 
@@ -90,7 +94,12 @@ const React = {
     callbacks[index] = { fn, deps }
     return fn
   },
-  useEffect (fn) { hookIndex += 1; pendingEffects.push(fn) },
+  useEffect (fn, deps) {
+    const i = hookIndex++
+    const previous = effectDeps[i]
+    if (!previous || !deps || deps.some((value, index) => !Object.is(value, previous[index]))) pendingEffects.push(fn)
+    effectDeps[i] = deps
+  },
 }
 
 // ---- load the bundle -------------------------------------------------------
@@ -114,11 +123,15 @@ const ctx = {
 }
 mod.apply(ctx)
 
-check('contributes exactly ONE settings section', sections.length === 1, 'count=' + sections.length)
-check('no second nav entry for installed',
-  sections.length === 1 && sections[0].cfg.id === 'dsh-plugin-market',
-  sections.map((s) => s.cfg.id).join(', '))
-check('its label is DSH 插件市场', sections.length === 1 && sections[0].cfg.label === 'DSH 插件市场')
+const mainViews = sections.filter(s => s.cfg.name === 'main')
+const sidebarEntries = sections.filter(s => s.cfg.name === 'sidebar.panellist')
+check('contributes exactly one main view and one sidebar entry', sections.length === 2 && mainViews.length === 1 && sidebarEntries.length === 1, sections.map(s => s.cfg.name).join(', '))
+check('does not register a settings section', !sections.some(s => s.cfg.name === 'settings.section'))
+check('sidebar navigation targets the registered main view', mainViews[0]?.cfg.key === 'dsh-plugin-market' && sidebarEntries[0]?.cfg.id === 'dsh-plugin-market')
+check('sidebar label is 插件市场', sidebarEntries[0]?.cfg.label === '插件市场')
+if (mainViews.length !== 1 || sidebarEntries.length !== 1) process.exit(1)
+const icon = sidebarEntries[0].Component({ size: 20 })
+check('sidebar icon is a scalable currentColor SVG', icon.type === 'svg' && icon.props.width === 20 && icon.props.stroke === 'currentColor')
 
 // ---- render harness --------------------------------------------------------
 function renderElement (node) {
@@ -155,7 +168,7 @@ const cardText = (tree) => {
   return card === undefined ? '' : textsOf(card)
 }
 
-const Component = sections[0].Component
+const Component = mainViews[0].Component
 function draw () {
   hookIndex = 0
   pendingEffects = []
@@ -176,6 +189,7 @@ console.log('--- 默认：全部插件 ---')
 stateStore.length = 0
 refs.length = 0
 callbacks.length = 0
+effectDeps.length = 0
 fetchCalls = []
 nextPayload = payloadFor([{ name: 'a1', category: 'ui', categoryZh: '界面', install: 'dsh plugin add a1' }], 3561, 3, 2)
 let tree = await settle(draw())
@@ -202,6 +216,18 @@ const text0 = textsOf(tree)
 check('offers the range selector on the browse tab', text0.includes('仅未安装'))
 check('shows the catalog size', text0.includes('目录 3561 个'), text0.slice(0, 160))
 check('renders the browse item', cardNames(tree).join(',') === 'a1', cardNames(tree).join(','))
+check('renders a named standalone market page', walk(tree).some(n => n.type === 'section' && n.props['aria-label'] === 'DSH 插件市场') && walk(tree).some(n => n.type === 'h1' && textsOf(n) === 'DSH 插件市场'))
+check('offers a one-click profile reload', text0.includes('重载 profile'), text0.slice(0, 200))
+
+// ---- reload the profile ----------------------------------------------------
+console.log('\n--- 重载 profile ---')
+const reloadButton = walk(tree).filter((n) => n.type === 'button' && textsOf(n) === '重载 profile')[0]
+check('renders an enabled reload button', reloadButton !== undefined && reloadButton.props.disabled !== true)
+fetchCalls = []
+reloadButton.props.onClick()
+tree = await settle(draw())
+check('reload posts to the host route', fetchCalls.length >= 1 && fetchCalls[0] === '/dsh-plugin-market/reload', fetchCalls.join(', '))
+check('reload reports that the profile was reloaded', textsOf(tree).includes('profile 已重载'), textsOf(tree).slice(0, 260))
 
 // ---- click the installed tab ----------------------------------------------
 console.log('\n--- 切到「已安装」标签 ---')
@@ -267,6 +293,7 @@ console.log('\n--- 已安装为空 ---')
 stateStore.length = 0
 refs.length = 0
 callbacks.length = 0
+effectDeps.length = 0
 fetchCalls = []
 nextPayload = payloadFor([], 0, 0)
 let tree2 = await settle(draw())
@@ -284,6 +311,7 @@ console.log('\n--- 已安装但没有更新 ---')
 stateStore.length = 0
 refs.length = 0
 callbacks.length = 0
+effectDeps.length = 0
 fetchCalls = []
 nextPayload = payloadFor([
   { name: 'a1', category: 'ui', categoryZh: '界面', install: 'dsh plugin add a1', installed: true, installedAs: 'a1', installedVersion: '1.0.0', version: '1.0.0', update: false },
@@ -298,6 +326,7 @@ console.log('\n--- 可更新为空 + 有无法判断的插件 ---')
 stateStore.length = 0
 refs.length = 0
 callbacks.length = 0
+effectDeps.length = 0
 fetchCalls = []
 nextPayload = payloadFor([], 0, 4, 0, 2)
 let treeEmpty = await settle(draw())
@@ -309,6 +338,35 @@ check('says there is nothing to update', emptyUp.includes('没有可更新的插
 check('and states the blind spot rather than implying all is well',
   emptyUp.includes('另有 2 个已安装插件无法判断'), emptyUp.slice(0, 260))
 check('the updatable tab shows 0', emptyUp.includes('可更新 0 个'), emptyUp.slice(0, 220))
+
+// Search drafts must not change the query used by pagination.
+stateStore.length = 0
+refs.length = 0
+callbacks.length = 0
+effectDeps.length = 0
+fetchCalls = []
+nextPayload = payloadFor([{ name: 'initial' }], 200, 0)
+let searchTree = await settle(draw())
+const inputOf = t => walk(t).find(n => n.type === 'input')
+inputOf(searchTree).props.onChange({ target: { value: 'alpha' } })
+searchTree = draw()
+nextPayload = payloadFor([{ name: 'alpha-result' }], 200, 0)
+inputOf(searchTree).props.onKeyDown({ key: 'Enter' })
+searchTree = await settle(draw())
+check('submitting search queries the typed keyword', fetchCalls.at(-1).includes('q=alpha'))
+inputOf(searchTree).props.onChange({ target: { value: 'beta' } })
+searchTree = draw()
+fetchCalls = []
+walk(searchTree).find(n => n.type === 'button' && textsOf(n).startsWith('加载更多')).props.onClick()
+searchTree = await settle(draw())
+check('pagination keeps the submitted search instead of its draft', fetchCalls.length === 1 && fetchCalls[0].includes('q=alpha&') && fetchCalls[0].includes('offset=1'), fetchCalls.join(', '))
+fetchCalls = []
+nextPayload = payloadFor([{ name: 'cleared-result' }], 1, 0)
+walk(searchTree).find(n => n.type === 'button' && textsOf(n) === '清除筛选').props.onClick()
+searchTree = await settle(draw())
+check('clearing a search fetches its unfiltered first page exactly once', fetchCalls.length === 1 && fetchCalls[0].includes('q=&') && fetchCalls[0].includes('offset=0'), fetchCalls.join(', '))
+check('clearing a search replaces the old results', cardNames(searchTree).join(',') === 'cleared-result', cardNames(searchTree).join(','))
+check('clearing a search clears its input', inputOf(searchTree).props.value === '')
 
 console.log('\n' + (bad === 0 ? 'TAB TEST PASSED' : 'TAB TEST FAILED (' + bad + ')'))
 process.exit(bad === 0 ? 0 : 1)

@@ -36,6 +36,11 @@ writeFileSync(script, src)
 const MARKER = '__MARKET_JSON__'
 const stateDir = join(scratch, 'state')
 const env = Object.assign({}, process.env, { DSH_MARKET_DIR: stateDir, DSH_HOME: join(scratch, 'home') })
+// This test names its profile explicitly; ambient desktop settings must not leak in.
+delete env.DSH_PROFILE
+delete env.DSH_PACKAGE_MANAGER_COMMAND
+delete env.DSH_PACKAGE_MANAGER_ARGS
+delete env.DSH_PACKAGE_MANAGER_ENV
 
 function run(args, expectExit = 0) {
   const started = Date.now()
@@ -113,7 +118,7 @@ if (inst.json) {
   check('found all three deps', inst.json.specCount === 3, 'specCount=' + inst.json.specCount)
   check('found the node_modules dirs', inst.json.dirCount === 2, 'dirCount=' + inst.json.dirCount)
   check('listed every spec name', Array.isArray(inst.json.specs) && inst.json.specs.length === 3, JSON.stringify(inst.json.specs))
-  const written = JSON.parse(readFileSync(join(stateDir, 'installed.json'), 'utf8'))
+  const written = JSON.parse(readFileSync(join(stateDir, 'installed', 'web.json'), 'utf8'))
   // The VALUE must be the recorded spec, not the name. The host half reads the
   // github URL back out of it to build its repo table; name -> name leaves that
   // table empty, so the ~46% of catalog entries whose install command is

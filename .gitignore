@@ -16,6 +16,7 @@ LOCAL-NOTES.md
 .core-test/
 .built-test/
 .bundle-test-state/
+.desktop-compat-test/
 .host-test-state/
 .ver-check/
 .probe-install/
@@ -23,6 +24,13 @@ LOCAL-NOTES.md
 tools/.runs/
 
 # --- local machine state --------------------------------------------------
+# Local package-manager cache and desktop inspection artifacts.
+/.pnpm-store/
+/.asar-read.mjs
+/.hmr-*
+/.reload-*.log
+/.check-all-*.log
+
 # A rollback copy of THIS machine's DSH profile manifest: the user's own
 # configuration, never part of the source.
 tools/.bundle-backup/

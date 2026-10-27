@@ -12,7 +12,8 @@ import { homedir } from 'node:os'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
-const realProfile = join(homedir(), '.dsh', 'profiles', 'web')
+const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+const realProfile = join(dshHome, 'profiles', process.env.DSH_PROFILE || 'web')
 const realModules = join(realProfile, 'node_modules', '.modules.yaml')
 
 if (!existsSync(realModules)) {
@@ -53,7 +54,7 @@ check('resolved spec matches the recorded major', major !== null && spec === 'pn
 //    the host entry rewrites this file whenever its contents differ from the copy it
 //    ships (see ensureHelper in index.js). So the invariant that matters is that it
 //    does not carry the old defects.
-const deployed = join(homedir(), '.dsh', '.dsh-plugin-market', 'market-core.mjs')
+const deployed = join(process.env.DSH_MARKET_DIR || join(dshHome, '.dsh-plugin-market'), 'market-core.mjs')
 check('helper present on disk', existsSync(deployed))
 if (existsSync(deployed)) {
   const body = readFileSync(deployed, 'utf8')

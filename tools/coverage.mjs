@@ -2,11 +2,11 @@
 // Usage: node tools/coverage.mjs
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 
 const HOME = process.env.DSH_HOME || join(process.env.USERPROFILE || process.env.HOME || '', '.dsh')
-const p = join(HOME, '.dsh-plugin-market', 'catalog.json')
-if (!existsSync(p)) { console.log('no catalog at ' + p); process.exit(1) }
+const state = process.env.DSH_MARKET_DIR || join(HOME, '.dsh-plugin-market')
+const p = join(state, 'catalog.json')
+if (!existsSync(p)) { console.log('SKIPPED: no local catalog at ' + p); process.exit(0) }
 
 const d = JSON.parse(readFileSync(p, 'utf8'))
 const all = d.plugins ?? []

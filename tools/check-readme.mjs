@@ -40,7 +40,9 @@ const STALE = [
   ['动态 Cordis 插件', 'this is a permanent bundle now'],
   ['harness.handle', 'that belonged to the dynamic Host half'],
   ['styles.insert', 'a bundle inserts its own CSS'],
-  ['dsh-plugin-market-installed', 'installed is an in-page tab, not a second settings entry'],
+  ['dsh-plugin-market-installed', 'installed is an in-page tab, not a second sidebar entry'],
+  ['settings.section', 'the market now uses the sidebar and main slots'],
+  ['打开设置 →', 'the market opens from the left sidebar'],
   ['refresh?', 'the force flag is `bypass`'],
   ['pkg/dsh-plugin-market', 'the package is at the repo root now'],
 ]
@@ -68,7 +70,7 @@ for (const [needle, why] of [
   ['1 小时', 'the catalog cache TTL'],
   ['bypass', 'the only force-refresh flag'],
   ['已安装', 'the installed tab'],
-  ['settings.section', 'how the page is registered'],
+  ['sidebar.panellist', 'how the navigation entry is registered'],
   ['market-core.mjs', 'the helper the host runs'],
   ['dsh.bundle', 'the declaration that makes it load'],
   ['github:99galaxy/dsh-plugin-market', 'the install command'],
@@ -81,7 +83,7 @@ for (const [needle, why] of [
 // ---- the local notes must still hold what was removed ---------------------
 console.log('\n-- LOCAL-NOTES: keeps what was removed --')
 if (notes === '') {
-  fail('LOCAL-NOTES.md is missing — the removed sections would be lost')
+  console.log('  SKIPPED: optional LOCAL-NOTES.md is absent in this checkout')
 } else {
   for (const [needle, why] of [
     ['## 开发', 'the development section'],

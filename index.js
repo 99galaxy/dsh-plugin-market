@@ -1,7 +1,7 @@
 /**
  * @99galaxy/dsh-plugin-market host entry.
  *
- * Mounts two HTTP routes under `/dsh-plugin-market/` once the profile composes
+ * Mounts three HTTP routes under `/dsh-plugin-market/` once the profile composes
  * the `webServer` service, and delegates the actual market work to the standalone
  * helper `market-core.mjs` (catalog fetch + cache, profile inventory, pnpm install).
  *
@@ -22,9 +22,9 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const HELPER_PATH = join(HERE, 'market-core.mjs')
 const SCRIPT_NAME = 'market-core.mjs'
 const MARKER = '__MARKET_JSON__'
-const PROFILE = 'web'
 const ROUTE_LIST = '/dsh-plugin-market/list'
 const ROUTE_INSTALL = '/dsh-plugin-market/install'
+const ROUTE_RELOAD = '/dsh-plugin-market/reload'
 
 // The helper's own TTL (tools/market-core.mjs CACHE_MS). Skipping the helper is only
 // sound when the helper would itself have decided the cache is fresh, so the two
@@ -38,11 +38,48 @@ const INSTALLED_TTL_MS = 5000
 // Distinguishes concurrent helper runs' capture files.
 let seqRun = 0
 let installInProgress = false
+let reloadInProgress = false
 
 // Memoises the helper-sync check. The key carries the shipped file's size and mtime,
 // so a long-lived process verifies the state-dir copy once instead of reading two
 // 13 KB files on every run — and still notices a helper that has been replaced.
 let helperMemo = { key: '', env: null }
+
+let runtime = {
+  profile: process.env.DSH_PROFILE || 'web',
+  packageManager: null,
+}
+
+function configureRuntime (ctx) {
+  const profileContext = typeof ctx.get === 'function' ? ctx.get('profileContext') : null
+  if (!profileContext || typeof profileContext !== 'object') return
+  if (typeof profileContext.name === 'string' && profileContext.name !== '') runtime.profile = profileContext.name
+  const manager = profileContext.packageManager
+  if (manager && typeof manager === 'object' && typeof manager.command === 'string' && manager.command !== '') {
+    runtime.packageManager = {
+      command: manager.command,
+      args: Array.isArray(manager.args) ? manager.args.slice() : [],
+      env: manager.env && typeof manager.env === 'object' ? Object.assign({}, manager.env) : {},
+    }
+  }
+}
+
+const profileName = () => runtime.profile
+
+function helperEnvironment () {
+  const env = Object.assign({}, process.env, { DSH_PROFILE: profileName() })
+  const manager = runtime.packageManager
+  if (manager) {
+    env.DSH_PACKAGE_MANAGER_COMMAND = manager.command
+    env.DSH_PACKAGE_MANAGER_ARGS = JSON.stringify(manager.args)
+    env.DSH_PACKAGE_MANAGER_ENV = JSON.stringify(manager.env)
+  } else {
+    delete env.DSH_PACKAGE_MANAGER_COMMAND
+    delete env.DSH_PACKAGE_MANAGER_ARGS
+    delete env.DSH_PACKAGE_MANAGER_ENV
+  }
+  return env
+}
 
 const home = () => process.env.DSH_HOME || join(homedir(), '.dsh')
 const stateDir = () => process.env.DSH_MARKET_DIR || join(home(), '.dsh-plugin-market')
@@ -148,6 +185,7 @@ function runHelper (args, timeoutMs) {
       child = spawn(process.execPath, [env.script].concat(args), {
         cwd: env.cwd,
         stdio: ['ignore', ofd, efd],
+        env: helperEnvironment(),
       })
     } catch (e) {
       closeSync(ofd)
@@ -372,7 +410,8 @@ function safeInt (v, fallback, min, max) {
 /** Read the profile's install snapshot the helper wrote. */
 function readInstalled () {
   try {
-    return JSON.parse(readFileSync(join(stateDir(), 'installed.json'), 'utf8'))
+    const snapshot = JSON.parse(readFileSync(join(stateDir(), 'installed', encodeURIComponent(profileName()) + '.json'), 'utf8'))
+    return snapshot && snapshot.profile === profileName() ? snapshot : null
   } catch (e) {
     return null
   }
@@ -488,8 +527,8 @@ function invalidateInstalled () {
 /** Changes whenever the profile's manifest does — or when it appears at all. */
 function profileKey () {
   try {
-    const st = statSync(join(home(), 'profiles', PROFILE, 'package.json'))
-    return String(st.size) + ':' + String(st.mtimeMs)
+    const st = statSync(join(home(), 'profiles', profileName(), 'package.json'))
+    return home() + '|' + stateDir() + '|' + profileName() + '|' + String(st.size) + ':' + String(st.mtimeMs)
   } catch (e) {
     return 'absent'
   }
@@ -506,7 +545,7 @@ async function refreshInstalled (force) {
   if (!force && installedMemo.result !== null && installedMemo.key === key && now - installedMemo.at < INSTALLED_TTL_MS) {
     return installedMemo.result
   }
-  const result = await runHelper(['installed', '--profile', PROFILE], 60000)
+  const result = await runHelper(['installed', '--profile', profileName()], 60000)
   installedMemo = { at: Date.now(), key, result }
   return result
 }
@@ -534,9 +573,11 @@ function installedMaps (installed) {
  * @param ctx - host context that composes `webServer`.
  */
 export function apply (ctx) {
+  configureRuntime(ctx)
   // `shell` is only needed for installs, so it is read per request: the route must
   // mount even on a profile that has not composed it yet.
   ctx.inject(['webServer'], (host) => {
+    configureRuntime(host)
     host.effect(() => {
       const disposes = []
 
@@ -707,10 +748,14 @@ export function apply (ctx) {
               sendJson(response, 409, { ok: false, message: '已有插件正在安装，请等待完成后重试' })
               return
             }
+            if (reloadInProgress) {
+              sendJson(response, 409, { ok: false, message: '正在重载 profile，完成后再安装插件' })
+              return
+            }
             installInProgress = true
             try {
               const started = Date.now()
-              const result = await runHelper(['install', spec, '--profile', PROFILE], 900000)
+              const result = await runHelper(['install', spec, '--profile', profileName()], 900000)
               const took = Math.round((Date.now() - started) / 1000)
               // `install` prints no result marker, so the exit code is the verdict.
               if (result.ok === true || result.exitCode === 0) {
@@ -732,6 +777,64 @@ export function apply (ctx) {
             }
           } catch (e) {
             sendJson(response, 500, { ok: false, message: textOf(e && e.message) })
+          }
+        },
+      }))
+
+      disposes.push(host.webServer.register({
+        kind: 'exact',
+        path: ROUTE_RELOAD,
+        handler: async (request, response) => {
+          const foreign = foreignCaller(request)
+          if (foreign !== '') {
+            sendJson(response, 403, { ok: false, message: '已拒绝跨站请求：' + foreign })
+            return
+          }
+          if (request.method !== 'POST') {
+            response.writeHead(405, { allow: 'POST' })
+            response.end()
+            return
+          }
+          try {
+            if (!isJsonRequest(request)) {
+              sendJson(response, 415, { ok: false, message: 'Content-Type 必须是 application/json' })
+              return
+            }
+            await readBody(request)
+            if (installInProgress) {
+              sendJson(response, 409, { ok: false, message: '正在安装插件，完成后再重载 profile' })
+              return
+            }
+            if (reloadInProgress) {
+              sendJson(response, 409, { ok: false, message: '已有一次 profile 重载在进行中' })
+              return
+            }
+            // HMR is the supported way to apply a newly installed bundle without a
+            // restart: it reads the same profile patches the launcher booted, replaces
+            // changed modules, and reconciles new entries. Headless profiles disable
+            // it; there the caller must restart DSH instead.
+            const hmr = typeof host.get === 'function' ? host.get('hmr') : null
+            if (!hmr || typeof hmr.runExclusive !== 'function' || typeof hmr.reconcileProfile !== 'function') {
+              sendJson(response, 503, { ok: false, message: '当前 profile 未启用 HMR，无法一键重载；请重启 DSH。' })
+              return
+            }
+            reloadInProgress = true
+            try {
+              // reconcileProfile throws unless it runs inside runExclusive: HMR uses
+              // that transaction to serialize module replacement with its file watches.
+              const result = await hmr.runExclusive(() => hmr.reconcileProfile())
+              invalidateInstalled()
+              sendJson(response, 200, {
+                ok: true,
+                warnings: result && Array.isArray(result.warnings) ? result.warnings : [],
+                pending: result && Array.isArray(result.pending) ? result.pending : [],
+                restartReason: result && result.restartReason ? String(result.restartReason) : '',
+              })
+            } finally {
+              reloadInProgress = false
+            }
+          } catch (e) {
+            sendJson(response, 500, { ok: false, message: '重载 profile 失败：' + textOf(e && e.message) })
           }
         },
       }))

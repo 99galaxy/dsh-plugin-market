@@ -1,8 +1,8 @@
 {
   "name": "@99galaxy/dsh-plugin-market",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "type": "module",
-  "description": "DSH 插件市场：在设置面板中浏览 awesome-dsh-plugin 目录并一键安装。Browse the awesome-dsh-plugin catalog inside Settings and install plugins.",
+  "description": "DSH 插件市场：从左侧栏浏览 awesome-dsh-plugin 目录并一键安装。Browse the awesome-dsh-plugin catalog from the sidebar and install plugins.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,7 +25,12 @@
     "cordis.patch.yml",
     "README.md"
   ],
+  "engines": {
+    "dsh": ">=0.1.5-rc.1 <0.3.0",
+    "node": ">=22.19"
+  },
   "dsh": {
+    "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

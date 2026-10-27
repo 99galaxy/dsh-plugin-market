@@ -1,19 +1,19 @@
 # @99galaxy/dsh-plugin-market
 
-**在 DeepSeek Harness 的设置面板里逛插件市场，一键安装。**
+**从 DeepSeek Harness 的左侧栏打开插件市场，一键安装。**
 
-> A plugin-market settings page for DeepSeek Harness: browse the community catalog,
+> A sidebar plugin-market page for DeepSeek Harness: browse the community catalog,
 > see what you already have on its own tab, and install with one click.
 
 数据来自 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 维护的
-官方目录 `plugins.json` —— 约 **3,500+ 个插件、23 个双语分类**，带 Star 数、下载量、收录日期，
+官方目录 `plugins.json` —— 约 **4,400+ 个插件、23 个双语分类**，带 Star 数、下载量、收录日期，
 以及每个条目的官方安装命令。
 
 ---
 
 ## 它做什么
 
-设置面板里新增一节 **「DSH 插件市场」**，**页面内**有三个标签：
+左侧栏新增 **「插件市场」** 入口，点击后在主区域打开独立页面。**页面内**有三个标签：
 
 | 标签 | 内容 |
 | --- | --- |
@@ -27,6 +27,7 @@
   「可更新 1.47.0（当前 1.46.1）」，按钮从「重新安装」变成「更新」
 - **中英切换**：简介可切中文/英文
 - **本地缓存**：目录存到本地，**1 小时内直接复用**；要最新的点「强制重新获取」
+- **一键重载 profile**：装完插件点「重载 profile」，通过 DSH 的 HMR 重新组合当前 profile，不必重启；没有 HMR 的 profile 会提示你重启
 - **四级降级**：官方域名 → 镜像 → CDN → npm，任一条通即可
 
 ## 安装
@@ -34,7 +35,7 @@
 这是一个 **DSH bundle**：装进 profile 后**重启 DSH 自动加载**。
 
 ```bash
-cd ~/.dsh/profiles/web          # 换成你的 profile 目录
+cd ~/.dsh/profiles/web          # Web 版；DSH 桌面版换成 desktop
 pnpm add github:99galaxy/dsh-plugin-market
 ```
 
@@ -46,6 +47,9 @@ pnpm add https://github.com/99galaxy/dsh-plugin-market
 
 装进来的**包名**是 `@99galaxy/dsh-plugin-market` —— 与仓库名不同，所以下面层列表里要写这个
 带 scope 的名字。
+
+> DSH 0.2.x 桌面版跑的是 `desktop` profile。插件会通过 `ctx.profileContext.name`
+> 自动识别当前 profile，所以页面里的「安装」不需要你在命令里写死 `--profile`。
 
 然后把它加进 `package.json` 的层列表 —— **声明了 `dsh.bundle` 的依赖才会被加载**：
 
@@ -66,9 +70,9 @@ pnpm add https://github.com/99galaxy/dsh-plugin-market
 
 ## 使用
 
-1. 打开设置 → **DSH 插件市场**
+1. 点击左侧栏的 **插件市场**
 2. 浏览或搜索；点卡片右侧「安装」
-3. 安装完成后**重启 DSH**，插件才会加载
+3. 安装完成后点工具栏的「**重载 profile**」；没有启用 HMR 的 profile 仍需重启 DSH
 
 「已安装」标签里可以确认某个插件是否已经在你的 profile 里；「可更新」标签里是可以升级的那些。
 
@@ -86,7 +90,8 @@ pnpm add https://github.com/99galaxy/dsh-plugin-market
 ┌─ 浏览器半边 ────────────────────────────────────────────────┐
 │  window.__ModuleLoader__.load({ id, factory(require) })     │
 │  require('react')；槽位服务由 ctx 注入                       │
-│  settings.section → 一个「DSH 插件市场」页面                 │
+│  sidebar.panellist → 左侧栏「插件市场」入口                  │
+│  main → 独立的「DSH 插件市场」页面                          │
 │      页面内三个标签：全部插件 / 已安装 / 可更新              │
 │  筛选、排序、分页、更新比对全部在宿主侧完成                  │
 └───────────────┬─────────────────────────────────────────────┘
@@ -96,6 +101,7 @@ pnpm add https://github.com/99galaxy/dsh-plugin-market
 │  ctx.inject(['webServer']) →                                │
 │    GET  /dsh-plugin-market/list                             │
 │    POST /dsh-plugin-market/install                          │
+│    POST /dsh-plugin-market/reload                           │
 │  子进程输出经**文件描述符**捕获（非管道、非 shell）           │
 └───────────────┬─────────────────────────────────────────────┘
                 │ spawn(node, [market-core.mjs, …])
@@ -103,7 +109,7 @@ pnpm add https://github.com/99galaxy/dsh-plugin-market
 │  market-core.mjs（真实文件，可单独运行）                      │
 │    catalog   抓取/缓存目录（官方 → 镜像 → CDN → npm）         │
 │    installed 读 profile 依赖 + node_modules + 已装版本        │
-│    install   用 profile 记录的 pnpm 主版本执行安装            │
+│    install   优先用 DSH 提供的包管理器；CLI 回退到 pnpm       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -119,7 +125,7 @@ ctx.inject(['webServer'], (host) => {
 })
 ```
 
-于是宿主暴露两条路由，浏览器半边用 `fetch` 调用。
+于是宿主暴露三条路由，浏览器半边用 `fetch` 调用。
 
 ### HTTP 接口
 
@@ -127,27 +133,32 @@ ctx.inject(['webServer'], (host) => {
 | --- | --- | --- | --- |
 | `GET` | `/dsh-plugin-market/list` | `bypass, category, q, sort, only, limit, offset`（`only` 取 `all` / `installed` / `notinstalled` / `updatable`） | `{ ok, payload: { items, categories, count, total, matched, installedTotal, updatableTotal, unknownTotal, offset, sort, only, category, q, catalogFromCache, fetchedAt, catalogUpdated, source, note } }` |
 | `POST` | `/dsh-plugin-market/install` | `{ install, name? }` | `{ ok, spec, seconds, log }` |
+| `POST` | `/dsh-plugin-market/reload` | `{}` | `{ ok, warnings, pending, restartReason }` |
 
 `items` 里的每个条目除了插件本身，还带 `installed` / `installedAs` / `installedVersion` / `update`。
 `updatableTotal` 是可更新数，`unknownTotal` 是**判断不了**的数（目录里没有版本，或目录没收录已声明的 bundle）；普通 profile 依赖不计入。
 更新判断只比对目录里的 `version`，不额外发任何网络请求。
 
 `bypass=1` 是**唯一**的强制重新抓取旗标；只有「强制重新获取」按钮发它，其余调用都只做新鲜度检查。
-三个标签也是**页面内的**：插件只注册一个 `settings.section`，另外两个标签由页面自己渲染。
+三个标签都是**页面内的**：插件注册一个 `sidebar.panellist` 入口和对应的 `main` 页面，标签由页面自己渲染。
 
-两条路由只接受**同源**调用（校验 `Sec-Fetch-Site` 与 `Origin`），安装接口还要求
+三条路由只接受**同源**调用（校验 `Sec-Fetch-Site` 与 `Origin`），安装和重载接口还要求
 `Content-Type: application/json` —— 直接挂在 webServer 上的路由不受 DSH `/api` 那道
 browser-trust fence 保护，所以插件自己拦。安装命令里的包名若以 `-` 开头会被拒绝
 （它会成为 pnpm 的一个**选项**而不是包名）。
+
+重载走 DSH 的 `hmr` 服务：`hmr.runExclusive(() => hmr.reconcileProfile())`，会把新装的
+bundle 重新组合进运行中的 Loader 树。返回里的 `pending` 是仍需重启才能替换的模块，
+`restartReason` 是 profile 级重启原因；两者都为空才会自动刷新页面。安装进行中会拒绝重载。
 
 ## 包内容
 
 ```
 package.json          声明 dsh.bundle.patch 与 dsh.client.platform
 cordis.patch.yml      把自己插进 profile 的层栈
-index.js              宿主半边：两条 HTTP 路由
+index.js              宿主半边：三条 HTTP 路由
 market-core.mjs       市场逻辑（生成物，请勿手改）
-client/client.js      浏览器半边：单个设置页 + 页内三个标签
+client/client.js      浏览器半边：左侧栏入口 + 主区域页面 + 页内三个标签
 ```
 
 `market-core.mjs` 由源生成后一并提交，所以 clone 下来即可安装，不需要任何构建步骤。

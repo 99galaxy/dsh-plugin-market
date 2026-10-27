@@ -26,6 +26,13 @@ rmSync(scratch, { recursive: true, force: true })
 mkdirSync(scratch, { recursive: true })
 process.env.DSH_MARKET_DIR = scratch
 process.env.DSH_HOME = join(scratch, 'home')
+// index.js reads DSH_PROFILE at import time and this test's scratch profile is
+// "web". An ambient desktop profile would make the host look for profiles/desktop
+// and fail every assertion, so pin the environment this test depends on.
+delete process.env.DSH_PROFILE
+delete process.env.DSH_PACKAGE_MANAGER_COMMAND
+delete process.env.DSH_PACKAGE_MANAGER_ARGS
+delete process.env.DSH_PACKAGE_MANAGER_ENV
 
 let bad = 0
 const check = (label, ok, detail) => { if (!ok) bad += 1; console.log((ok ? '  OK    ' : '  FAIL  ') + label + (detail ? '  -> ' + detail : '')) }
@@ -42,8 +49,25 @@ const webServer = {
   },
 }
 
+// HMR is the service the reload route drives. The fake enforces the one contract
+// that matters: reconcileProfile() may only run inside runExclusive().
+let hmrReloads = 0
+let hmrInTransaction = false
+const hmr = {
+  async runExclusive (operation) {
+    hmrInTransaction = true
+    try { return await operation() } finally { hmrInTransaction = false }
+  },
+  async reconcileProfile () {
+    if (!hmrInTransaction) throw new Error('reconcileProfile ran outside runExclusive')
+    hmrReloads += 1
+    return { warnings: [], pending: [] }
+  },
+}
+
 const services = {
   webServer,
+  hmr,
   shell: {
     resolve: (r) => r,
     run: async () => ({ exitCode: 0, stdout: { text: '' }, stderr: { text: '' }, sandbox: null }),
@@ -90,7 +114,8 @@ mod.apply(makeCtx())
 check('used the deferred inject path', injects === 1, 'injects=' + injects)
 check('registered the list route', routes.has('/dsh-plugin-market/list'))
 check('registered the install route', routes.has('/dsh-plugin-market/install'))
-check('registered exactly two routes', routes.size === 2, [...routes.keys()].join(', '))
+check('registered the reload route', routes.has('/dsh-plugin-market/reload'))
+check('registered exactly three routes', routes.size === 3, [...routes.keys()].join(', '))
 for (const [path, route] of routes) {
   check(path + ' is kind:"exact" with a handler', route.kind === 'exact' && typeof route.handler === 'function')
 }
@@ -165,6 +190,47 @@ async function postInstall (body, headers) {
   return res
 }
 
+// ---- exercise POST /reload -------------------------------------------------
+const reloadRoute = routes.get('/dsh-plugin-market/reload')
+
+async function postReload (body, headers) {
+  const req = mockPost(body, headers)
+  const res = mockResponse()
+  const done = reloadRoute.handler(req, res)
+  req.deliver()
+  await done
+  return res
+}
+
+const resReload = await postReload('{}')
+check('POST /reload answered 200', resReload.state.status === 200,
+  'status=' + resReload.state.status + ' body=' + resReload.state.body.slice(0, 240))
+let reloadBody = null
+try { reloadBody = JSON.parse(resReload.state.body) } catch (e) { reloadBody = null }
+check('reload reports ok', reloadBody !== null && reloadBody.ok === true, resReload.state.body.slice(0, 240))
+check('reload ran through HMR exactly once', hmrReloads === 1, 'reloads=' + hmrReloads)
+
+const resReloadCross = await postReload('{}', { 'sec-fetch-site': 'cross-site', origin: 'https://evil.example' })
+check('reload route refuses a cross-site caller', resReloadCross.state.status === 403,
+  'status=' + resReloadCross.state.status)
+
+const resReloadForm = await postReload('{}', { 'content-type': 'text/plain' })
+check('reload route requires JSON', resReloadForm.state.status === 415,
+  'status=' + resReloadForm.state.status)
+
+const resReloadGet = mockResponse()
+await reloadRoute.handler({ method: 'GET', url: '/dsh-plugin-market/reload', headers: {} }, resReloadGet)
+check('reload route rejects GET with 405', resReloadGet.state.status === 405,
+  'status=' + resReloadGet.state.status)
+
+// A profile without HMR (headless) must say so instead of pretending it reloaded.
+const savedHmr = services.hmr
+delete services.hmr
+const resNoHmr = await postReload('{}')
+services.hmr = savedHmr
+check('reload route reports a profile without HMR', resNoHmr.state.status === 503,
+  'status=' + resNoHmr.state.status + ' body=' + resNoHmr.state.body.slice(0, 200))
+
 const resBad = await postInstall(JSON.stringify({ install: 'rm -rf /' }))
 check('install route refuses a non-dsh command', resBad.state.status === 400, 'status=' + resBad.state.status + ' body=' + resBad.state.body.slice(0, 200))
 
@@ -235,6 +301,8 @@ check('client id matches the package name', clientSrc.includes("id: '@99galaxy/d
 check('client requires react at runtime', clientSrc.includes('require("react")'))
 check('client calls the host list route', clientSrc.includes('/dsh-plugin-market/list'))
 check('client calls the host install route', clientSrc.includes('/dsh-plugin-market/install'))
+check('client calls the host reload route', clientSrc.includes('/dsh-plugin-market/reload'))
+check('client offers a one-click profile reload', clientSrc.includes('重载 profile'))
 // Look for an actual invocation, not the word in a comment explaining its absence.
 check('client never invokes host.call', !/\bhost\s*\.\s*call\s*\(/.test(clientSrc))
 
@@ -271,10 +339,10 @@ if (!existsSync(npmCli)) {
     dependencies: {},
     dsh: { profile: { bundles: [] } },
   }, null, 2))
-  // Point npm's own caches at the scratch. pnpm still keeps its content-addressable
-  // store wherever ITS config says, so the store may be shared with the user's — but
-  // the install lands in the scratch profile, which is what this test owns.
-  process.env.npm_config_cache = join(scratch, '.npm-cache')
+  // Point pnpm's store and npm's temp files at the scratch; the install lands in the
+  // scratch profile, which is what this test owns. Do NOT redirect npm_config_cache:
+  // pnpm 12.14.0 fails to open its store operation lock when the cache is redirected
+  // on Windows, and this guard is about the route, not pnpm's release quality.
   process.env.npm_config_store_dir = join(scratch, 'store')
   process.env.npm_config_tmp = join(scratch, 'npm-tmp')
   mkdirSync(join(scratch, 'npm-tmp'), { recursive: true })

@@ -39,6 +39,12 @@ const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'np
 const SPEC_A = 'is-odd@3.0.1'
 const SPEC_B = 'is-even@1.0.0'
 
+// Pin a known-good 12.x for the live comparison. pnpm 12.14.0 fails to open its
+// store operation lock when npm_config_cache is redirected to a scratch directory
+// on Windows (an upstream bug), and this guard must test the helper's command
+// shape, not pnpm's release quality. 12.4.1 is the version this profile records.
+const TEST_PNPM = 'pnpm@12.4.1'
+
 let bad = 0
 const check = (label, ok, detail) => { if (!ok) bad += 1; console.log((ok ? '  OK    ' : '  FAIL  ') + label + (detail ? '  -> ' + detail : '')) }
 
@@ -51,6 +57,9 @@ console.log('--- the helper\'s install command shape ---')
 check('reads the pnpm major from .modules.yaml', helperSrc.includes('modulesYaml'))
 check('resolves a pnpm spec from that major', helperSrc.includes("const pnpmSpec = major === null ? 'pnpm' : 'pnpm@' + major[1]"))
 check('runs pnpm through npm-cli exec', helperSrc.includes("'--package=' + pnpmSpec"))
+check('supports the DSH-provided package manager', helperSrc.includes('DSH_PACKAGE_MANAGER_COMMAND'))
+check('lets the DSH-provided manager invoke pnpm itself (no extra argv)',
+  !helperSrc.includes("manager.args.concat(['pnpm'])"))
 check('does NOT pin pnpm@9', !helperSrc.includes("'--package=pnpm@9'"))
 check('does NOT pass --config.store-dir', !helperSrc.includes('--config.store-dir'))
 check('does NOT pass --config.node-linker', !helperSrc.includes('--config.node-linker'))
@@ -100,7 +109,7 @@ if (!existsSync(npmCli)) {
     npm_config_tmp: join(scratch, 'npm-tmp'),
     TEMP: join(scratch, 'tmp'),
     TMP: join(scratch, 'tmp'),
-    PNPM_SPEC: 'pnpm@12',
+    PNPM_SPEC: TEST_PNPM,
   }
   for (const d of ['.npm-cache', 'store', 'npm-tmp', 'tmp']) mkdirSync(join(scratch, d), { recursive: true })
 
@@ -162,7 +171,10 @@ if (!existsSync(npmCli)) {
     check('the original shape is refused', a.code !== 0)
 
     console.log('\n  --- B) the helper\'s shape: recorded major, no --config.* ---')
-    baseEnv.PNPM_SPEC = majorMatch === null ? 'pnpm' : 'pnpm@' + majorMatch[1]
+    // Use the exact version the seed recorded. A floating pnpm@12 would pick the
+    // newest 12.x, which can change the result for reasons unrelated to our shape.
+    const exact = /pnpm@(\d+\.\d+\.\d+)/.exec(recorded)
+    baseEnv.PNPM_SPEC = exact === null ? TEST_PNPM : 'pnpm@' + exact[1]
     console.log('    using ' + baseEnv.PNPM_SPEC)
     const b = runPnpm(['add', SPEC_B, '-w', '--dir', profileDir])
     console.log('    exit=' + b.code)

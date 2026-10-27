@@ -3,14 +3,14 @@
  *
  * A DSH client bundle: the shell's module loader runs this file, which only
  * registers a factory. The factory returns a Cordis plugin (`inject` + `apply`)
- * whose `apply` registers one entry in the `settings.section` list slot.
+ * whose `apply` registers a left-sidebar entry and its matching main view.
  *
  * Differences from the dynamic-plugin form of this UI, all forced by the bundle
  * contract:
  *   - React arrives through `require("react")`, not as an injected global.
  *   - The slot service arrives as a Cordis service (`ctx.slots`), not `ctx.get`.
  *   - There is no package-private `host.call`; the host half is reached over its
- *     two HTTP routes instead (see index.js for why).
+ *     three HTTP routes instead (see index.js for why).
  */
 window.__ModuleLoader__.load({
   id: '@99galaxy/dsh-plugin-market',
@@ -23,11 +23,16 @@ window.__ModuleLoader__.load({
 
     const API_LIST = '/dsh-plugin-market/list'
     const API_INSTALL = '/dsh-plugin-market/install'
+    const API_RELOAD = '/dsh-plugin-market/reload'
     const PAGE = 100
     const LIST_URL = 'https://github.com/awesome-dsh-plugin/awesome-dsh-plugin'
     const SRC_URL = 'https://awesome-dsh-plugin.com/plugins.json'
 
     const CSS = [
+      '.dsxpm-page{height:100%;min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary)}',
+      '.dsxpm-page-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}',
+      '.dsxpm-page-content{box-sizing:border-box;width:100%;max-width:1200px;margin:0 auto;padding:28px clamp(16px,3vw,40px) 40px}',
+      '.dsxpm-page-title{font-size:22px;line-height:1.4;font-weight:600;margin:0 0 20px}',
       '.dsxpm-root{display:flex;flex-direction:column;gap:10px;padding:4px 2px 20px;color:var(--dsw-alias-label-primary);font-size:13px}',
       '.dsxpm-tabs{display:flex;gap:2px;border-bottom:1px solid var(--dsw-alias-border-l1)}',
       '.dsxpm-tab{cursor:pointer;border:none;background:none;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:13px;line-height:1.4;padding:7px 14px;border-bottom:2px solid transparent;margin-bottom:-1px}',
@@ -120,9 +125,18 @@ window.__ModuleLoader__.load({
       return body
     }
 
-    // One settings page holding TWO tabs. This is an in-page tab bar, not two
-    // `settings.section` entries: the plugin contributes a single page, and the
-    // installed list is a view within it.
+    async function postReload () {
+      const res = await fetch(API_RELOAD, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      })
+      const body = await res.json().catch(() => null)
+      if (body === null) return { ok: false, message: 'Host 返回了无法解析的内容（HTTP ' + res.status + '）' }
+      return body
+    }
+
+    // The three catalog ranges are tabs inside one sidebar page.
     function MarketPage () {
       const [tab, setTab] = React.useState('all')
       const installedMode = tab === 'installed'
@@ -140,6 +154,7 @@ window.__ModuleLoader__.load({
       const [srcNote, setSrcNote] = React.useState('')
       const [saveAge, setSaveAge] = React.useState('')
       const [search, setSearch] = React.useState('')
+      const [appliedSearch, setAppliedSearch] = React.useState('')
       const [category, setCategory] = React.useState('')
       const [sort, setSort] = React.useState('stars')
       const [only, setOnly] = React.useState('all')
@@ -151,6 +166,8 @@ window.__ModuleLoader__.load({
       const [adv, setAdv] = React.useState(false)
       const [busy, setBusy] = React.useState('')
       const [job, setJob] = React.useState(null)
+      const [reloading, setReloading] = React.useState(false)
+      const [reloadNote, setReloadNote] = React.useState('')
 
       // Latest filter values, read by reference. The dynamic-plugin form of this UI
       // had to hand-roll this because reads went through a stale render closure and
@@ -170,7 +187,7 @@ window.__ModuleLoader__.load({
 
       function setFilter (patch) {
         if (patch.category !== undefined) { latest.current.category = patch.category; setCategory(patch.category) }
-        if (patch.q !== undefined) { latest.current.q = patch.q; setSearch(patch.q) }
+        if (patch.q !== undefined) { latest.current.q = patch.q.trim(); setSearch(patch.q); setAppliedSearch(patch.q.trim()) }
         if (patch.sort !== undefined) { latest.current.sort = patch.sort; setSort(patch.sort) }
         if (patch.only !== undefined) { latest.current.only = patch.only; setOnly(patch.only) }
       }
@@ -236,7 +253,14 @@ window.__ModuleLoader__.load({
       // This effect also covers the MOUNT. A separate `useEffect(…, [])` alongside it
       // fired on the first render too, issuing the identical request a second time —
       // two host round trips per page open, and nothing to show for the first one.
-      React.useEffect(function () { query(0, false, false) }, [category, sort, only])
+      React.useEffect(function () { query(0, false, false) }, [category, sort, only, appliedSearch])
+
+      function submitSearch () {
+        setFilter({ q: search })
+        // Changed keywords are queried by the effect; submitting the same keyword
+        // still explicitly refreshes its first page.
+        if (search.trim() === appliedSearch) query(0, false, false)
+      }
 
       function install (item) {
         const spec = String(item.name || '')
@@ -259,13 +283,42 @@ window.__ModuleLoader__.load({
         })
       }
 
+      function reloadProfile () {
+        if (reloading) return
+        setReloading(true)
+        setError('')
+        setDetail('')
+        setReloadNote('')
+        postReload().then(function (res) {
+          setReloading(false)
+          if (!res || res.ok !== true) {
+            setError(res && res.message ? String(res.message) : '重载 profile 失败')
+            if (res && res.detail) setDetail(String(res.detail))
+            return
+          }
+          const pending = Array.isArray(res.pending) ? res.pending.length : 0
+          if (res.restartReason || pending > 0) {
+            setReloadNote('profile 配置已重载，但有 ' + (pending > 0 ? String(pending) + ' 个模块' : '部分模块') + '需要重启 DSH 才能生效。')
+            query(0, false, false)
+            return
+          }
+          setReloadNote('profile 已重载，正在刷新页面…')
+          setTimeout(function () {
+            try { window.location.reload() } catch (e) { /* keep the note if the shell has no location */ }
+          }, 800)
+        }, function (e) {
+          setReloading(false)
+          setError('请求 Host 失败：' + String((e && e.message) || e))
+        })
+      }
+
       function resetFilters () {
         // `only` is pinned by whichever tab is open, so clearing the other filters
         // must not switch the range back to "all".
         setFilter({ q: '', category: '', sort: 'stars', only: tabOnly })
       }
 
-      const filtersActive = search.trim() !== '' || category !== '' || (tabOnly === 'all' && only !== 'all')
+      const filtersActive = search.trim() !== '' || appliedSearch !== '' || category !== '' || (tabOnly === 'all' && only !== 'all')
       const catLabels = {}
       for (const c of cats) catLabels[c.id] = c.zh || c.en || c.id
 
@@ -300,6 +353,11 @@ window.__ModuleLoader__.load({
 
       const bar = []
       bar.push(el('button', { key: 'r', className: 'dsxpm-btn', disabled: loading, onClick: function () { query(0, false, true) } }, [loading ? '获取中…' : '强制重新获取']))
+      bar.push(el('button', {
+        key: 'reload', className: 'dsxpm-btn', disabled: reloading || busy !== '',
+        title: '重新组合当前 profile，让刚安装的插件生效',
+        onClick: reloadProfile,
+      }, [reloading ? '重载中…' : '重载 profile']))
       const catOpts = [el('option', { key: 'all', value: '' }, ['全部分类'])]
       cats.forEach(function (c) { catOpts.push(el('option', { key: c.id, value: c.id }, [String(c.zh || c.id) + '（' + String(c.count) + '）'])) })
       bar.push(el('select', { key: 'c', className: 'dsxpm-select', value: category, onChange: function (e) { setFilter({ category: e.target.value }) } }, catOpts))
@@ -320,10 +378,10 @@ window.__ModuleLoader__.load({
       }
       bar.push(el('input', {
         key: 'q', className: 'dsxpm-input', placeholder: '搜索插件名或简介（回车）…', value: search,
-        onChange: function (e) { latest.current.q = e.target.value; setSearch(e.target.value) },
-        onKeyDown: function (e) { if (e.key === 'Enter') query(0, false, false) },
+        onChange: function (e) { setSearch(e.target.value) },
+        onKeyDown: function (e) { if (e.key === 'Enter') submitSearch() },
       }))
-      bar.push(el('button', { key: 'go', className: 'dsxpm-btn', disabled: loading, onClick: function () { query(0, false, false) } }, ['搜索']))
+      bar.push(el('button', { key: 'go', className: 'dsxpm-btn', disabled: loading, onClick: submitSearch }, ['搜索']))
       if (filtersActive) bar.push(el('button', { key: 'cl', className: 'dsxpm-btn', disabled: loading, onClick: resetFilters }, ['清除筛选']))
       bar.push(el('button', { key: 'z', className: 'dsxpm-btn', onClick: function () { setZh(!zh) } }, [zh ? '中文' : 'EN']))
       bar.push(el('button', { key: 'a', className: 'dsxpm-btn', onClick: function () { setAdv(!adv) } }, [adv ? '收起设置' : '设置']))
@@ -342,22 +400,23 @@ window.__ModuleLoader__.load({
       // version for — or has never heard of at all — cannot be judged either way, so
       // an empty list here must not be read as "everything is current".
       if (updatableMode && unknownTotal > 0) {
-        kids.push(el('div', { key: 'unk', className: 'dsxpm-meta' }, ['另有 ' + String(unknownTotal) + ' 个已安装插件无法判断（目录里没有可用的版本信息）']))
+        kids.push(el('div', { key: 'unk', className: 'dsxpm-meta' }, ['另有 ' + String(unknownTotal) + ' 个已安装插件无法判断（目录里没有版本信息，或没有收录）']))
       }
       if (saveAge !== '') kids.push(el('div', { key: 'age', className: 'dsxpm-meta' }, [saveAge]))
       if (srcNote !== '') kids.push(el('div', { key: 'src', className: 'dsxpm-meta', style: { color: 'var(--dsw-alias-state-warn-primary)' } }, [srcNote]))
+      if (reloadNote !== '') kids.push(el('div', { key: 'reload-note', className: 'dsxpm-meta' }, [reloadNote]))
       if (error !== '') kids.push(el('div', { key: 'err', className: 'dsxpm-meta', style: { color: 'var(--dsw-alias-state-error-primary)' } }, [error]))
       if (detail !== '') kids.push(el('div', { key: 'det', className: 'dsxpm-log' }, [detail]))
 
       if (job !== null) {
         const box = [el('div', { key: 't', style: { fontWeight: 600 } }, [(job.kind || '安装') + '完成：' + job.spec + '（' + String(job.seconds) + ' 秒）'])]
-        box.push(el('div', { key: 'n', className: 'dsxpm-meta' }, ['请重启 DSH（或重载 profile）后该插件才会加载。']))
+        box.push(el('div', { key: 'n', className: 'dsxpm-meta' }, ['请点上方「重载 profile」让刚安装的插件生效；没有 HMR 时仍需重启 DSH。']))
         if (job.log) box.push(el('div', { key: 'l', className: 'dsxpm-log' }, [String(job.log)]))
         kids.push(el('div', { key: 'job', className: 'dsxpm-card' }, [el('div', { className: 'dsxpm-info' }, box)]))
       }
 
       if (!loading && list.length === 0) {
-        const filtered = search.trim() !== '' || category !== ''
+        const filtered = appliedSearch !== '' || category !== ''
         kids.push(el('div', { key: 'empty', className: 'dsxpm-meta' }, [installedMode
           ? (filtered ? '已安装的插件里没有匹配项。' : '还没有安装任何插件。去「全部插件」标签挑一个吧。')
           : updatableMode
@@ -395,7 +454,7 @@ window.__ModuleLoader__.load({
           ]),
           el('button', {
             className: 'dsxpm-btn' + (it.installed && !it.update ? '' : ' dsxpm-btn-on'),
-            disabled: busy !== '',
+            disabled: busy !== '' || reloading,
             onClick: function () { install(it) },
           }, [isBusy
             ? (it.update ? '更新中…' : '安装中…')
@@ -415,16 +474,38 @@ window.__ModuleLoader__.load({
 
     const inject = ['slots']
 
+    function MarketView () {
+      return el('section', { className: 'dsxpm-page', 'aria-label': 'DSH 插件市场' }, [
+        el('div', { className: 'dsxpm-page-scroll' }, [
+          el('div', { className: 'dsxpm-page-content' }, [
+            el('h1', { className: 'dsxpm-page-title', 'data-window-drag': true }, ['DSH 插件市场']),
+            el(MarketPage),
+          ]),
+        ]),
+      ])
+    }
+
+    function MarketIcon (props) {
+      const size = props && typeof props.size === 'number' ? props.size : 20
+      return el('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, [
+        el('path', { d: 'M6 7h12l2 14H4L6 7Z' }),
+        el('path', { d: 'M9 7V6a3 3 0 0 1 6 0v1' }),
+      ])
+    }
+
     function apply (ctx) {
       ctx.effect(() => insertCss(), '@99galaxy/dsh-plugin-market: styles')
-      // ONE settings page. The all/installed split lives inside it as an in-page tab
-      // bar, so the settings navigation gains a single entry, not two.
-      ctx.slots.inject('settings.section', () => ctx.slots.register({
-        name: 'settings.section',
+      // The host selects main views by the matching sidebar entry id / view key.
+      ctx.slots.inject('main', () => ctx.slots.register({
+        name: 'main',
+        key: 'dsh-plugin-market',
+      }, MarketView))
+      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+        name: 'sidebar.panellist',
         id: 'dsh-plugin-market',
-        order: 16,
-        label: 'DSH 插件市场',
-      }, MarketPage))
+        order: 25,
+        label: '插件市场',
+      }, MarketIcon))
     }
 
     exports.apply = apply

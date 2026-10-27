@@ -8,12 +8,11 @@ const MIRROR = 'https://gh-proxy.com/'
 const CDN = 'https://cdn.jsdelivr.net/npm/dsh-plugin-catalog@latest/plugins.json'
 const NPM_META = 'https://registry.npmjs.org/dsh-plugin-catalog'
 const CACHE_MS = 3600000
-const PROFILE_DEFAULT = 'web'
+const PROFILE_DEFAULT = process.env.DSH_PROFILE || 'web'
 
 const HOME = process.env.DSH_HOME || join(process.env.USERPROFILE || process.env.HOME || '', '.dsh')
 const STATE_DIR = process.env.DSH_MARKET_DIR || join(HOME, '.dsh-plugin-market')
 const CATALOG_PATH = join(STATE_DIR, 'catalog.json')
-const INSTALLED_PATH = join(STATE_DIR, 'installed.json')
 
 function parseArgs(argv) {
   const flags = {}
@@ -224,11 +223,13 @@ function doInstalled() {
     versions,
   }
   if (!ensureDir()) return { ok: false, message: '无法创建状态目录' }
-  writeFileSync(INSTALLED_PATH, JSON.stringify(payload))
+  const installedPath = join(STATE_DIR, 'installed', encodeURIComponent(profile) + '.json')
+  mkdirSync(dirname(installedPath), { recursive: true })
+  writeFileSync(installedPath, JSON.stringify(payload))
   return {
     ok: true, profile, specCount: Object.keys(specs).length, dirCount: dirNames.length,
     versionCount: Object.keys(versions).length,
-    path: INSTALLED_PATH, specs: Object.keys(specs),
+    path: installedPath, specs: Object.keys(specs),
   }
 }
 
@@ -238,6 +239,52 @@ function modulesYaml(profileDir) {
   } catch (e) {
     return ''
   }
+}
+
+function readJsonEnv(name, fallback) {
+  try {
+    const value = process.env[name]
+    return value === undefined || value === '' ? fallback : JSON.parse(value)
+  } catch (e) {
+    return fallback
+  }
+}
+
+function packageManager() {
+  const command = process.env.DSH_PACKAGE_MANAGER_COMMAND
+  if (typeof command === 'string' && command !== '') {
+    const args = readJsonEnv('DSH_PACKAGE_MANAGER_ARGS', [])
+    const extraEnv = readJsonEnv('DSH_PACKAGE_MANAGER_ENV', {})
+    return {
+      command,
+      args: Array.isArray(args) ? args : [],
+      env: Object.assign({}, process.env, extraEnv && typeof extraEnv === 'object' ? extraEnv : {}),
+    }
+  }
+  const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  if (!existsSync(npmCli)) return null
+  return {
+    command: process.execPath,
+    args: [npmCli, 'exec', '--yes'],
+    env: Object.assign({}, process.env),
+    npmCli,
+  }
+}
+
+function installTargetNames(spec, before, after) {
+  const npm = /^(@[^/\s]+\/[^@\s]+|[^@/:\s]+)(?:@[^\s]+)?$/.exec(spec)
+  const npmName = npm ? npm[1] : ''
+  const repoOf = value => {
+    const match = /^(?:github:|(?:git\+)?https:\/\/github\.com\/|git@github\.com:)?([^@/:]+\/[^/#?]+)(?:[#?].*)?$/.exec(value)
+    if (!match) return ''
+    const subdir = /(?:#|&)path:([^&]+)/.exec(value)
+    return match[1].replace(/\.git$/i, '').toLowerCase() + (subdir ? '#path:' + subdir[1] : '')
+  }
+  const repo = repoOf(spec)
+  const oldDeps = before.dependencies || {}
+  return Object.keys(after.dependencies || {}).filter(name =>
+    !Object.hasOwn(oldDeps, name) || name === npmName ||
+    (repo !== '' && repoOf(after.dependencies[name]) === repo))
 }
 
 function doInstall() {
@@ -252,9 +299,9 @@ function doInstall() {
     console.error('market: no spec')
     process.exit(2)
   }
-  const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
-  if (!existsSync(npmCli)) {
-    console.error('market: npm-cli.js not found: ' + npmCli)
+  const manager = packageManager()
+  if (manager === null) {
+    console.error('market: no usable package manager was provided by DSH and npm-cli.js is unavailable')
     process.exit(3)
   }
   const manifestPath = join(profileDir, 'package.json')
@@ -297,10 +344,14 @@ function doInstall() {
     }
     let r
     try {
+
+      const commandArgs = manager.npmCli
+        ? manager.args.concat(['--package=' + pnpmSpec, '--', 'pnpm'])
+        : manager.args
       r = spawnSync(
-        process.execPath,
-        [npmCli, 'exec', '--yes', '--package=' + pnpmSpec, '--', 'pnpm'].concat(baseArgs).concat(extraArgs || []),
-        { cwd: profileDir, stdio: ['ignore', ofd, efd], env },
+        manager.command,
+        commandArgs.concat(baseArgs).concat(extraArgs || []),
+        { cwd: profileDir, stdio: ['ignore', ofd, efd], env: Object.assign({}, env, manager.env) },
       )
     } finally {
       closeSync(ofd)
@@ -335,7 +386,7 @@ function doInstall() {
   const after = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const bundles = (after.dsh && after.dsh.profile && after.dsh.profile.bundles) || []
   let changed = false
-  for (const name of Object.keys(after.dependencies || {})) {
+  for (const name of installTargetNames(spec, before, after)) {
     let isBundle = false
     try {
       const m = JSON.parse(readFileSync(join(profileDir, 'node_modules', name, 'package.json'), 'utf8'))
