@@ -5,7 +5,7 @@
 1. 完成实现；修改辅助脚本源后运行 `node tools/build-helper.mjs`。
 2. 运行 `node tools/check-all.mjs` 和 `git diff --check`。界面改动需在 DSH 中验证并更新截图。
 3. 选择尚未发布的适当版本，检查 npm 实际打包内容，提交并推送插件仓库，再核对 GitHub 远端提交。
-4. 运行 `npm publish --access public`。核验 npm registry 的版本、`latest` 标签和实际发布包；只推送 GitHub 不代表已发布 npm。
+4. 运行 `npm publish --access public --registry=https://registry.npmjs.org`。本机默认使用镜像，登录、发布及核验均需显式指定 npm 官方 registry。核验版本、`latest` 标签和实际发布包；只推送 GitHub 不代表已发布 npm。
 5. 更新 `awesome-dsh-plugin/awesome-dsh-plugin` 的目录条目：
    - Fork：`99galaxy/awesome-dsh-plugin`。
    - 复用分支：`update-99galaxy-dsh-plugin-market`。
