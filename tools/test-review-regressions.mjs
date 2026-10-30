@@ -24,12 +24,13 @@ for (const [profile, name] of [['web', 'web-only'], ['desktop', 'desktop-only']]
     name: profile, private: true,
     dependencies: {
       [name]: '1.0.0', dormant: '1.0.0', '@review/dormant': '1.0.0',
+      'update-target': '^1.0.0',
       'git-a': 'github:review/mono#path:packages/a',
       'git-b': 'github:review/mono#path:packages/b',
     },
     dsh: { profile: { bundles: [name] } },
   })
-  for (const pkg of [name, 'dormant', '@review/dormant', 'git-a', 'git-b']) {
+  for (const pkg of [name, 'dormant', '@review/dormant', 'update-target', 'git-a', 'git-b']) {
     mkdirSync(join(dir, 'node_modules', pkg), { recursive: true })
     write(join(dir, 'node_modules', pkg, 'package.json'), {
       name: pkg, version: '1.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } },
@@ -38,22 +39,30 @@ for (const [profile, name] of [['web', 'web-only'], ['desktop', 'desktop-only']]
 }
 write(join(state, 'catalog.json'), {
   fetchedAt: Date.now(), categories: {},
-  plugins: ['web-only', 'desktop-only'].map(name => ({ name, version: '1.0.0', install: 'dsh plugin add ' + name })),
+  plugins: [
+    { name: 'web-only', version: '1.0.0', install: 'dsh plugin add web-only' },
+    { name: 'desktop-only', version: '1.0.0', install: 'dsh plugin add desktop-only' },
+    { name: 'update-target', version: '1.2.0', install: 'dsh plugin add update-target' },
+    { name: 'git-a', url: 'https://github.com/review/mono', version: '2.0.0', install: 'dsh plugin add github:review/mono#path:packages/a' },
+  ],
 })
 const manager = `
 const fs = require('node:fs');
 const args = process.argv.slice(1);
+fs.appendFileSync('manager-args.log', JSON.stringify(args) + '\\n');
 const aliases = {
-  'dormant@1.0.0': 'dormant',
-  '@review/dormant@1.0.0': '@review/dormant',
   'github:review/mono#path:packages/a': 'git-a',
 };
-const name = aliases[args[1]] || args[1];
+const spec = args[1];
+let name = aliases[spec] || spec;
+let version = '1.0.0';
+const versioned = /^(@[^/]+\\/[^@]+|[^@]+)@([^@]+)$/.exec(name);
+if (versioned) { name = versioned[1]; version = versioned[2]; }
 const manifest = JSON.parse(fs.readFileSync('package.json'));
-manifest.dependencies[name] = args[1].startsWith('github:') ? args[1] : '1.0.0';
+manifest.dependencies[name] = spec.startsWith('github:') ? spec : '^' + version;
 fs.writeFileSync('package.json', JSON.stringify(manifest));
 fs.mkdirSync('node_modules/' + name, { recursive: true });
-fs.writeFileSync('node_modules/' + name + '/package.json', JSON.stringify({name, version:'1.0.0', dsh:{bundle:{patch:'./cordis.patch.yml'}}}));
+fs.writeFileSync('node_modules/' + name + '/package.json', JSON.stringify({name, version, dsh:{bundle:{patch:'./cordis.patch.yml'}}}));
 `
 let entered, release
 const started = new Promise(resolve => { entered = resolve })
@@ -86,7 +95,7 @@ try {
   await web('list')
   await desktop('list')
   const again = await web('list')
-  check('web inventory remains isolated after a desktop request', again.payload.items.map(x => x.name).join(',') === 'web-only', JSON.stringify(again.payload.items.map(x => x.name)))
+  check('web inventory remains isolated after a desktop request', again.payload.items.map(x => x.name).join(',') === 'web-only,update-target,git-a', JSON.stringify(again.payload.items.map(x => x.name)))
   const inventoryPath = join(state, 'installed', 'web.json')
   const ownSnapshot = readFileSync(inventoryPath, 'utf8')
   const foreignSnapshot = JSON.parse(ownSnapshot)
@@ -123,6 +132,13 @@ try {
   manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   check('a GitHub subdirectory reinstall enables its target', manifest.dsh.profile.bundles.includes('git-a'))
   check('a sibling GitHub bundle remains disabled', !manifest.dsh.profile.bundles.includes('git-b'))
+  await web('install', { install: 'dsh plugin add update-target', update: true })
+  const updatedVersion = JSON.parse(readFileSync(join(home, 'profiles', 'web', 'node_modules', 'update-target', 'package.json'), 'utf8')).version
+  check('an update request installs the catalog version instead of preserving the old range', updatedVersion === '1.2.0', updatedVersion)
+  await web('install', { install: 'dsh plugin add github:review/mono#path:packages/a', update: true })
+  const managerCalls = readFileSync(join(home, 'profiles', 'web', 'manager-args.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  const gitUpdate = managerCalls.at(-1)
+  check('a non-registry update forces pnpm to resolve it again', gitUpdate.includes('--force'), JSON.stringify(gitUpdate))
 
   const clone = join(scratch, 'clone')
   mkdirSync(join(clone, 'tools'), { recursive: true })

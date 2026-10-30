@@ -25,8 +25,11 @@
 - **安装状态**：已安装的条目带绿色徽章；若目录名与你实际装的包名不同，会标出真实包名
 - **更新检测**：拿目录里的 `version` 和 profile 里实际装的版本比对，有更新的挂橙色徽章
   「可更新 1.47.0（当前 1.46.1）」，按钮从「重新安装」变成「更新」
+- **精确更新**：更新 npm 插件时直接安装目录中的目标版本，不会因为旧的 `^` 范围而误报
+  「已是最新」；Git 来源更新则强制重新解析来源
 - **中英切换**：简介可切中文/英文
-- **本地缓存**：目录存到本地，**1 小时内直接复用**；要最新的点「强制重新获取」
+- **本地缓存**：目录存到本地，**1 小时内直接复用**；过期时先显示本地内容并在后台更新，
+  不再用下载阻塞首屏；要立即等待最新版可点「强制重新获取」
 - **一键重载 profile**：装完插件点「重载 profile」，通过 DSH 的 HMR 重新组合当前 profile，不必重启；没有 HMR 的 profile 会提示你重启
 - **四级降级**：官方域名 → 镜像 → CDN → npm，任一条通即可
 
@@ -132,7 +135,7 @@ ctx.inject(['webServer'], (host) => {
 | 方法 | 路径 | 入参 | 出参 |
 | --- | --- | --- | --- |
 | `GET` | `/dsh-plugin-market/list` | `bypass, category, q, sort, only, limit, offset`（`only` 取 `all` / `installed` / `notinstalled` / `updatable`） | `{ ok, payload: { items, categories, count, total, matched, installedTotal, updatableTotal, unknownTotal, offset, sort, only, category, q, catalogFromCache, fetchedAt, catalogUpdated, source, note } }` |
-| `POST` | `/dsh-plugin-market/install` | `{ install, name? }` | `{ ok, spec, seconds, log }` |
+| `POST` | `/dsh-plugin-market/install` | `{ install, name?, version?, update? }` | `{ ok, spec, seconds, log }` |
 | `POST` | `/dsh-plugin-market/reload` | `{}` | `{ ok, warnings, pending, restartReason }` |
 
 `items` 里的每个条目除了插件本身，还带 `installed` / `installedAs` / `installedVersion` / `update`。

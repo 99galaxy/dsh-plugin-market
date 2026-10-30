@@ -248,6 +248,13 @@ function runHelper (args, timeoutMs) {
 // Parsed catalog, memoised on the file's size+mtime key. Re-reading and re-parsing
 // the ~2.6 MB file on every request was ~27 ms of the ~315 ms a request cost.
 let catalogMemo = { key: '', data: null }
+let catalogRefresh = null
+
+function startCatalogRefresh () {
+  if (catalogRefresh !== null) return catalogRefresh
+  catalogRefresh = runHelper(['catalog'], 300000).finally(() => { catalogRefresh = null })
+  return catalogRefresh
+}
 
 /**
  * Read the cached catalog. The helper writes it; the host serves it.
@@ -519,6 +526,7 @@ function preparedCatalog (data, key) {
 
 // The inventory snapshot, memoised: it changes only when the profile does.
 let installedMemo = { at: 0, key: '', result: null }
+let installedRefresh = null
 
 function invalidateInstalled () {
   installedMemo = { at: 0, key: '', result: null }
@@ -548,6 +556,34 @@ async function refreshInstalled (force) {
   const result = await runHelper(['installed', '--profile', profileName()], 60000)
   installedMemo = { at: Date.now(), key, result }
   return result
+}
+
+function startInstalledRefresh () {
+  if (installedRefresh !== null) return installedRefresh
+  installedRefresh = refreshInstalled(false).finally(() => { installedRefresh = null })
+  return installedRefresh
+}
+
+/**
+ * Use a valid on-disk snapshot immediately and refresh it in the background.
+ * The first profile after a fresh install has no snapshot, so that case still waits
+ * for the helper; subsequent page opens stay fast across DSH restarts.
+ */
+async function ensureInstalled (force) {
+  const key = profileKey()
+  const now = Date.now()
+  if (!force && installedMemo.result !== null && installedMemo.key === key && now - installedMemo.at < INSTALLED_TTL_MS) return
+  if (!force && readInstalled() !== null) {
+    startInstalledRefresh()
+    return
+  }
+  await refreshInstalled(force)
+}
+
+function pinnedUpdateSpec (spec, version) {
+  if (versionParts(version) === null) return ''
+  const m = /^(@[^/\s]+\/[^@\s]+|[^@/\s:]+)(?:@[^\s]+)?$/.exec(spec)
+  return m === null ? '' : m[1] + '@' + version
 }
 
 function installedMaps (installed) {
@@ -611,8 +647,12 @@ export function apply (ctx) {
             // from a query string is an open door on a route that has no session.
             const cached = readCatalog()
             let summary
-            if (!bypass && cached.ok === true && Date.now() - numOf(cached.data.fetchedAt) < CATALOG_CACHE_MS) {
+            if (!bypass && cached.ok === true) {
               summary = cachedSummary(cached.data)
+              if (Date.now() - numOf(cached.data.fetchedAt) >= CATALOG_CACHE_MS) {
+                summary.note = '目录缓存已过期，正在后台更新；本次先显示本地内容'
+                startCatalogRefresh()
+              }
             } else {
               summary = await runHelper(bypass ? ['catalog', '--force', '1'] : ['catalog'], 300000)
               if (summary.ok !== true) {
@@ -626,7 +666,7 @@ export function apply (ctx) {
             }
 
             // Refresh the inventory so the installed badges are current.
-            await refreshInstalled(bypass)
+            await ensureInstalled(bypass)
             const snapshot = readInstalled()
             const maps = installedMaps(snapshot)
             const versions = snapshot && snapshot.versions ? snapshot.versions : {}
@@ -739,10 +779,30 @@ export function apply (ctx) {
             const raw = await readBody(request)
             let body = {}
             try { body = raw === '' ? {} : JSON.parse(raw) } catch (e) { body = {} }
-            const spec = safeSpec(body.install)
-            if (spec === null) {
+            const requestedSpec = safeSpec(body.install)
+            if (requestedSpec === null) {
               sendJson(response, 400, { ok: false, message: '安装命令无法解析或不安全，已拒绝执行' })
               return
+            }
+            let spec = requestedSpec
+            const update = body.update === true
+            let forceUpdate = false
+            if (update) {
+              const catalog = readCatalog()
+              const row = catalog.ok === true
+                ? preparedCatalog(catalog.data, catalog.key).rows.find(candidate => candidate.install === body.install)
+                : null
+              if (row === null || row === undefined || versionParts(row.version) === null) {
+                sendJson(response, 400, { ok: false, message: '目录中没有可用于更新的版本信息，请先重新获取目录' })
+                return
+              }
+              spec = pinnedUpdateSpec(requestedSpec, row.version)
+              if (spec === '') {
+                // Git and other non-registry specs cannot take an npm version suffix.
+                // Force pnpm to resolve the source again instead of reusing its lock.
+                spec = requestedSpec
+                forceUpdate = true
+              }
             }
             if (installInProgress) {
               sendJson(response, 409, { ok: false, message: '已有插件正在安装，请等待完成后重试' })
@@ -755,12 +815,15 @@ export function apply (ctx) {
             installInProgress = true
             try {
               const started = Date.now()
-              const result = await runHelper(['install', spec, '--profile', profileName()], 900000)
+              const helperArgs = ['install', spec, '--profile', profileName()]
+              if (forceUpdate) helperArgs.push('--force', '1')
+              const result = await runHelper(helperArgs, 900000)
               const took = Math.round((Date.now() - started) / 1000)
               // `install` prints no result marker, so the exit code is the verdict.
               if (result.ok === true || result.exitCode === 0) {
                 // The badge must not stay stale for the TTL after a successful install.
-                invalidateInstalled()
+                const refreshed = await refreshInstalled(true)
+                if (refreshed.ok !== true) invalidateInstalled()
                 sendJson(response, 200, { ok: true, spec, seconds: took, log: textOf(result.stdout).slice(-4000) })
                 return
               }
@@ -823,7 +886,8 @@ export function apply (ctx) {
               // reconcileProfile throws unless it runs inside runExclusive: HMR uses
               // that transaction to serialize module replacement with its file watches.
               const result = await hmr.runExclusive(() => hmr.reconcileProfile())
-              invalidateInstalled()
+              const refreshed = await refreshInstalled(true)
+              if (refreshed.ok !== true) invalidateInstalled()
               sendJson(response, 200, {
                 ok: true,
                 warnings: result && Array.isArray(result.warnings) ? result.warnings : [],

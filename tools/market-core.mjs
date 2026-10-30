@@ -335,6 +335,7 @@ function installTargetNames(spec, before, after) {
 function doInstall() {
   const spec = parsed.rest[1] || ''
   const profile = flags.profile || PROFILE_DEFAULT
+  const forceUpdate = String(flags.force || '') === '1'
   const profileDir = join(HOME, 'profiles', profile)
   if (!existsSync(join(profileDir, 'package.json'))) {
     console.error('market: no profile at ' + profileDir)
@@ -378,6 +379,7 @@ function doInstall() {
   const pnpmSpec = major === null ? 'pnpm' : 'pnpm@' + major[1]
 
   const baseArgs = ['add', spec, '-w', '--dir', profileDir]
+  const updateArgs = forceUpdate ? ['--force'] : []
 
   // Run pnpm with its output captured to FILES (never pipes, and never through a
   // shell: the spec comes from a remote catalog, so a shell would be an injection
@@ -425,7 +427,7 @@ function doInstall() {
     return { status: r.status, error: r.error, output }
   }
 
-  let result = runPnpm([])
+  let result = runPnpm(updateArgs)
 
   // strictDepBuilds defaults to true, so pnpm EXITS NON-ZERO when any dependency has
   // an unreviewed build script (ERR_PNPM_IGNORED_BUILDS) — a profile that merely
@@ -441,7 +443,7 @@ function doInstall() {
       console.log('market: pnpm refused because a dependency has an unreviewed build script.')
       console.log('market: retrying with --ignore-scripts (nothing gets built, nothing is approved).')
       console.log('market: to build such a package deliberately, run `pnpm approve-builds` in the profile.')
-      const retry = runPnpm(['--ignore-scripts'])
+      const retry = runPnpm(updateArgs.concat(['--ignore-scripts']))
       result = { status: retry.status, error: retry.error, output: result.output + '\n' + retry.output }
     }
   }

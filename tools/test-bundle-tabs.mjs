@@ -29,11 +29,16 @@ global.document = {
 }
 
 let fetchCalls = []
+let fetchRequests = []
 let nextPayload = null
-global.fetch = async (url) => {
+global.fetch = async (url, options) => {
   fetchCalls.push(String(url))
+  fetchRequests.push({ url: String(url), options: options || {} })
   if (String(url).includes('/reload')) {
     return { status: 200, json: async () => ({ ok: true, warnings: [], pending: [] }) }
+  }
+  if (String(url).includes('/install')) {
+    return { status: 200, json: async () => ({ ok: true, seconds: 1, log: '' }) }
   }
   return { status: 200, json: async () => nextPayload }
 }
@@ -273,6 +278,13 @@ check('the action button offers an update', textsOf(cardButton(tree)) === '更�
 check('HIDES the range selector on the updatable tab', !textUp.includes('仅未安装'), textUp.slice(0, 200))
 check('reports the updatable count', textUp.includes('可更新 1 个'), textUp.slice(0, 200))
 check('says nothing about blind spots when there are none', !textUp.includes('无法判断'), textUp.slice(0, 260))
+fetchRequests = []
+cardButton(tree).props.onClick()
+tree = await settle(draw())
+const updateInstall = fetchRequests.find(request => request.url.includes('/install'))
+const updateBody = updateInstall ? JSON.parse(updateInstall.options.body || '{}') : {}
+check('an update tells the host that this is an update', updateBody.update === true, JSON.stringify(updateBody))
+check('an update sends the catalog version for exact resolution', updateBody.version === '1.47.0', JSON.stringify(updateBody))
 
 // ---- click back to the browse tab -----------------------------------------
 console.log('\n--- 切回「全部插件」标签 ---')

@@ -19,6 +19,7 @@ const steps = [
   ['host routes in a mock context + client source invariants', 'test-bundle.mjs'],
   ['desktop profile and package manager compatibility', 'test-desktop-compat.mjs'],
   ['review regressions: isolation, activation, exclusion, portable checks', 'test-review-regressions.mjs'],
+  ['stale catalog serves immediately and refreshes in the background', 'test-market-latency.mjs'],
   ['sidebar navigation and the three market tabs render and behave differently', 'test-bundle-tabs.mjs'],
   ['catalog field coverage', 'coverage.mjs'],
   ['README has no stale claims', 'check-readme.mjs'],

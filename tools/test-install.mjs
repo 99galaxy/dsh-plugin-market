@@ -67,13 +67,16 @@ check('does NOT pass --config.auto-install-peers', !helperSrc.includes('--config
 check('does NOT pass --config.ignore-workspace-root-check', !helperSrc.includes('--config.ignore-workspace-root-check'))
 check('passes add/spec/-w/--dir', /const baseArgs = \['add', spec, '-w', '--dir', profileDir\]/.test(helperSrc),
   (helperSrc.match(/const baseArgs = \[[^\]]*\]/) || ['(not found)'])[0])
+check('supports force-resolving non-registry updates', helperSrc.includes("const forceUpdate = String(flags.force || '') === '1'") &&
+  helperSrc.includes("const updateArgs = forceUpdate ? ['--force'] : []"), 'missing update --force path')
+check('keeps --force on the ignored-build retry', helperSrc.includes("runPnpm(updateArgs.concat(['--ignore-scripts']))"))
 // strictDepBuilds defaults to true, so pnpm exits non-zero on ANY unreviewed build
 // script: a profile merely CONTAINING node-pty would fail every install. pnpm 12
 // ignores --config.strict-dep-builds / npm_config_strict_dep_builds for this, so the
 // helper falls back to --ignore-scripts — and only after pnpm has actually refused,
 // so approved builds still run.
 check('detects the unreviewed-build refusal', helperSrc.includes('ERR_PNPM_IGNORED_BUILDS'))
-check('falls back to --ignore-scripts', helperSrc.includes("runPnpm(['--ignore-scripts'])"))
+check('falls back to --ignore-scripts', helperSrc.includes("runPnpm(updateArgs.concat(['--ignore-scripts']))"))
 check('the fallback is conditional, not unconditional',
   /if \(result\.status !== 0 && result\.output\.includes\('ERR_PNPM_IGNORED_BUILDS'\)\)/.test(helperSrc))
 check('does NOT dangerously allow all builds',

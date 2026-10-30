@@ -1,6 +1,6 @@
 {
   "name": "@99galaxy/dsh-plugin-market",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "DSH 插件市场：从左侧栏浏览 awesome-dsh-plugin 目录并一键安装。Browse the awesome-dsh-plugin catalog from the sidebar and install plugins.",
   "license": "MIT",

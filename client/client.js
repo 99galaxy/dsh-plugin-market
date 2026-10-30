@@ -114,11 +114,11 @@ window.__ModuleLoader__.load({
       return body
     }
 
-    async function postInstall (spec, name) {
+    async function postInstall (spec, name, version, update) {
       const res = await fetch(API_INSTALL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ install: spec, name }),
+        body: JSON.stringify({ install: spec, name, version, update: update === true }),
       })
       const body = await res.json().catch(() => null)
       if (body === null) return { ok: false, message: 'Host 返回了无法解析的内容（HTTP ' + res.status + '）' }
@@ -268,7 +268,7 @@ window.__ModuleLoader__.load({
         setJob(null)
         setError('')
         setDetail('')
-        postInstall(String(item.install || ''), spec).then(function (res) {
+        postInstall(String(item.install || ''), spec, String(item.version || ''), item.update === true).then(function (res) {
           setBusy('')
           if (res && res.ok === true) {
             setJob({ spec: spec, kind: item.update ? '更新' : '安装', seconds: res.seconds, log: res.log || '' })

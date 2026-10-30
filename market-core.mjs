@@ -290,6 +290,7 @@ function installTargetNames(spec, before, after) {
 function doInstall() {
   const spec = parsed.rest[1] || ''
   const profile = flags.profile || PROFILE_DEFAULT
+  const forceUpdate = String(flags.force || '') === '1'
   const profileDir = join(HOME, 'profiles', profile)
   if (!existsSync(join(profileDir, 'package.json'))) {
     console.error('market: no profile at ' + profileDir)
@@ -324,6 +325,7 @@ function doInstall() {
   const pnpmSpec = major === null ? 'pnpm' : 'pnpm@' + major[1]
 
   const baseArgs = ['add', spec, '-w', '--dir', profileDir]
+  const updateArgs = forceUpdate ? ['--force'] : []
 
   function runPnpm (extraArgs) {
     if (!ensureDir()) return { status: 1, error: null, output: '无法创建状态目录' }
@@ -364,14 +366,14 @@ function doInstall() {
     return { status: r.status, error: r.error, output }
   }
 
-  let result = runPnpm([])
+  let result = runPnpm(updateArgs)
 
   if (result.error === null || result.error === undefined) {
     if (result.status !== 0 && result.output.includes('ERR_PNPM_IGNORED_BUILDS')) {
       console.log('market: pnpm refused because a dependency has an unreviewed build script.')
       console.log('market: retrying with --ignore-scripts (nothing gets built, nothing is approved).')
       console.log('market: to build such a package deliberately, run `pnpm approve-builds` in the profile.')
-      const retry = runPnpm(['--ignore-scripts'])
+      const retry = runPnpm(updateArgs.concat(['--ignore-scripts']))
       result = { status: retry.status, error: retry.error, output: result.output + '\n' + retry.output }
     }
   }
