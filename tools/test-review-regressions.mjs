@@ -13,6 +13,14 @@ const check = (label, ok, detail) => {
   console.log((ok ? '  OK    ' : '  FAIL  ') + label + (detail ? ' -> ' + detail : ''))
 }
 const write = (path, value) => writeFileSync(path, JSON.stringify(value))
+const originalFetch = globalThis.fetch
+const registryRequests = []
+globalThis.fetch = async (url) => {
+  registryRequests.push(String(url))
+  const name = decodeURIComponent(new URL(url).pathname.split('/')[1])
+  if (name === 'registry-unavailable') return { ok: false, status: 503 }
+  return { ok: true, json: async () => ({ name, version: name === 'fresh-plugin' ? '2.0.0' : name === '@review/fresh' ? '3.0.0' : name === 'bad-metadata' ? 'file:evil' : '1.0.0' }) }
+}
 process.env.DSH_HOME = home
 process.env.DSH_MARKET_DIR = state
 for (const key of ['DSH_PROFILE', 'DSH_PACKAGE_MANAGER_COMMAND', 'DSH_PACKAGE_MANAGER_ARGS', 'DSH_PACKAGE_MANAGER_ENV']) delete process.env[key]
@@ -50,6 +58,7 @@ const manager = `
 const fs = require('node:fs');
 const args = process.argv.slice(1);
 fs.appendFileSync('manager-args.log', JSON.stringify(args) + '\\n');
+if (fs.existsSync('skip-install')) process.exit(0);
 const aliases = {
   'github:review/mono#path:packages/a': 'git-a',
 };
@@ -140,6 +149,23 @@ try {
   const gitUpdate = managerCalls.at(-1)
   check('a non-registry update forces pnpm to resolve it again', gitUpdate.includes('--force'), JSON.stringify(gitUpdate))
 
+  const fresh = await web('install', { install: 'dsh plugin add fresh-plugin', version: '1.0.0' })
+  check('first install resolves official latest instead of the stale catalog or pnpm age fallback', fresh.ok === true && fresh.spec === 'fresh-plugin@2.0.0', JSON.stringify(fresh))
+  const freshVersion = JSON.parse(readFileSync(join(home, 'profiles', 'web', 'node_modules', 'fresh-plugin', 'package.json'), 'utf8')).version
+  check('first install actually lands the latest version', freshVersion === '2.0.0', freshVersion)
+  const scoped = await web('install', { install: 'dsh plugin add @review/fresh@latest' })
+  check('scoped latest tags are resolved to a concrete version', scoped.ok === true && scoped.spec === '@review/fresh@3.0.0', JSON.stringify(scoped))
+  check('latest lookup uses only the official npm registry', registryRequests.includes('https://registry.npmjs.org/fresh-plugin/latest') && registryRequests.includes('https://registry.npmjs.org/%40review%2Ffresh/latest'), JSON.stringify(registryRequests))
+  const beforeFailure = readFileSync(manifestPath, 'utf8')
+  const unavailable = await web('install', { install: 'dsh plugin add registry-unavailable' })
+  check('registry failure is reported instead of falling back to an old install', unavailable.ok === false && readFileSync(manifestPath, 'utf8') === beforeFailure, JSON.stringify(unavailable))
+  const invalid = await web('install', { install: 'dsh plugin add bad-metadata' })
+  check('invalid registry versions are rejected before running pnpm', invalid.ok === false && readFileSync(manifestPath, 'utf8') === beforeFailure, JSON.stringify(invalid))
+  writeFileSync(join(home, 'profiles', 'web', 'skip-install'), '')
+  const noOp = await web('install', { install: 'dsh plugin add fresh-plugin@2.1.0' })
+  rmSync(join(home, 'profiles', 'web', 'skip-install'))
+  check('pnpm exit zero without the target version is not reported as success', noOp.ok === false && noOp.status === 500, JSON.stringify(noOp))
+
   const clone = join(scratch, 'clone')
   mkdirSync(join(clone, 'tools'), { recursive: true })
   for (const file of ['README.md', 'tools/check-readme.mjs', 'tools/coverage.mjs', 'tools/check-helper-version.mjs']) {
@@ -153,6 +179,7 @@ try {
   const helperCheck = spawnSync(process.execPath, [join(clone, 'tools/check-helper-version.mjs')], { cwd: clone, env, encoding: 'utf8' })
   check('local profile checks respect the configured empty DSH home', helperCheck.status === 0 && helperCheck.stdout.includes('SKIPPED'), helperCheck.stdout.trim().slice(0, 200))
 } finally {
+  globalThis.fetch = originalFetch
   release()
   rmSync(scratch, { recursive: true, force: true })
 }

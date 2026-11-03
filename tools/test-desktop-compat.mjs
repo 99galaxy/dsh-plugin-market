@@ -66,7 +66,7 @@ const fakeManager = `
 const fs = require('node:fs')
 const path = require('node:path')
 const args = process.argv.slice(1)
-if (args[0] !== 'add' || args[1] !== 'desktop-installed') process.exit(41)
+if (args[0] !== 'add' || args[1] !== 'desktop-installed@1.0.0') process.exit(41)
 const manifestPath = path.join(process.cwd(), 'package.json')
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
 manifest.dependencies = Object.assign({}, manifest.dependencies, { 'desktop-installed': '1.0.0' })
@@ -111,6 +111,11 @@ try { list = JSON.parse(listResponse.state.body) } catch (e) { list = null }
 check('desktop inventory uses the injected desktop profile', list?.ok === true && list.payload.items.some((item) => item.name === 'desktop-only'), JSON.stringify(list?.payload))
 
 const installResponse = response()
+const originalFetch = globalThis.fetch
+globalThis.fetch = async (url) => {
+  if (String(url) !== 'https://registry.npmjs.org/desktop-installed/latest') throw new Error('Unexpected registry URL: ' + url)
+  return { ok: true, json: async () => ({ name: 'desktop-installed', version: '1.0.0' }) }
+}
 await routes.get('/dsh-plugin-market/install').handler({
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -120,6 +125,7 @@ await routes.get('/dsh-plugin-market/install').handler({
     if (event === 'end') callback()
   },
 }, installResponse)
+globalThis.fetch = originalFetch
 let install = null
 try { install = JSON.parse(installResponse.state.body) } catch (e) { install = null }
 const manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))

@@ -586,6 +586,33 @@ function pinnedUpdateSpec (spec, version) {
   return m === null ? '' : m[1] + '@' + version
 }
 
+const exactVersion = value => typeof value === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(value)
+
+/** Resolve npm's latest tag before pnpm can silently select an older release. */
+async function resolveRegistryInstall (spec) {
+  const m = /^(@[a-z0-9._-]+\/[a-z0-9._-]+|[a-z0-9._-]+)(?:@([^\s]+))?$/i.exec(spec)
+  if (m === null) return { spec }
+  const name = m[1]
+  let version = m[2]
+  if (version === undefined || version === 'latest') {
+    try {
+      const response = await fetch('https://registry.npmjs.org/' + encodeURIComponent(name) + '/latest', {
+        headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+        cache: 'no-store',
+      })
+      if (!response.ok) throw new Error('HTTP ' + response.status)
+      const manifest = await response.json()
+      if (manifest.name !== name || !exactVersion(manifest.version)) throw new Error('registry 返回的包名或版本无效')
+      version = manifest.version
+    } catch (e) {
+      throw new Error('无法确认 ' + name + ' 的 npm 最新版本，已取消安装：' + textOf(e && e.message))
+    }
+    spec = name + '@' + version
+  }
+  return { spec, name, version: exactVersion(version) ? version : '' }
+}
+
 function installedMaps (installed) {
   const bySpec = {}
   const byRepo = {}
@@ -815,6 +842,8 @@ export function apply (ctx) {
             installInProgress = true
             try {
               const started = Date.now()
+              const target = await resolveRegistryInstall(spec)
+              spec = target.spec
               const helperArgs = ['install', spec, '--profile', profileName()]
               if (forceUpdate) helperArgs.push('--force', '1')
               const result = await runHelper(helperArgs, 900000)
@@ -824,6 +853,18 @@ export function apply (ctx) {
                 // The badge must not stay stale for the TTL after a successful install.
                 const refreshed = await refreshInstalled(true)
                 if (refreshed.ok !== true) invalidateInstalled()
+                if (target.version) {
+                  const snapshot = refreshed.ok === true ? readInstalled() : null
+                  const actual = snapshot && snapshot.versions ? snapshot.versions[target.name] : ''
+                  if (actual !== target.version) {
+                    sendJson(response, 500, {
+                      ok: false, spec, seconds: took,
+                      message: '安装未通过版本校验：期望 ' + target.version + '，实际 ' + (actual || '无法读取') + '。请重试安装。',
+                      log: textOf(result.stdout).slice(-4000),
+                    })
+                    return
+                  }
+                }
                 sendJson(response, 200, { ok: true, spec, seconds: took, log: textOf(result.stdout).slice(-4000) })
                 return
               }
